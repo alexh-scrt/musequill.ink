@@ -1,6 +1,7 @@
 /**
  * MuseQuill.ink Book Planner Wizard
  * Interactive multi-step form for book creation parameters
+ * Updated with structured sub-genre system
  */
 
 class BookPlannerWizard {
@@ -23,7 +24,7 @@ class BookPlannerWizard {
 
         // Development environments
         if (hostname === 'localhost' || hostname === '127.0.0.1') {
-            return `http://${hostname}:8000/api`;
+            return `http://${hostname}:8055/api`; // Updated to match the API port
         }
 
         // Production - assume same domain
@@ -165,9 +166,13 @@ class BookPlannerWizard {
             });
         });
 
-        // Form field changes
-        document.getElementById('genre').addEventListener('change', (e) => {
-            this.onGenreChange(e.target.value);
+        // Form field changes - UPDATED for structured sub-genre system
+        document.getElementById('genre').addEventListener('change', async (e) => {
+            await this.onGenreChange(e.target.value);
+        });
+
+        document.getElementById('sub_genre').addEventListener('change', async (e) => {
+            await this.onSubGenreChange(e.target.value);
         });
 
         document.getElementById('world_type').addEventListener('change', (e) => {
@@ -195,17 +200,335 @@ class BookPlannerWizard {
     }
 
     /**
-     * Handle genre selection changes
+     * Handle genre selection changes - UPDATED FOR STRUCTURED SUB-GENRES
      */
-    onGenreChange(genre) {
+    async onGenreChange(genre) {
+        console.log(`🎭 Genre changed to: ${genre}`);
+
         if (genre) {
-            this.showGenreRecommendations(genre);
-            this.updateSubGenreOptions(genre);
-            this.updateMetadataDisplay('genre', genre);
+            // Show loading state for dependent fields
+            this.setSubGenreLoading(true);
+
+            try {
+                // Update sub-genres using the new structured system
+                await this.updateSubGenreOptions(genre);
+
+                // Update other genre-dependent elements
+                await this.showGenreRecommendations(genre);
+                this.updateMetadataDisplay('genre', genre);
+                this.updateWorldTypeVisibility(genre);
+
+                console.log(`✅ Genre change handling complete for: ${genre}`);
+
+            } catch (error) {
+                console.error('❌ Error updating genre-related fields:', error);
+                this.showError(`Failed to load options for ${genre}. Please try again.`);
+            } finally {
+                this.setSubGenreLoading(false);
+            }
         } else {
+            // Clear dependent fields when no genre selected
+            this.clearSubGenreOptions();
             this.hideRecommendations();
+            this.clearMetadataDisplay('genre');
         }
+
         this.validateCurrentStep();
+    }
+
+    /**
+     * Handle sub-genre selection changes with validation
+     */
+    async onSubGenreChange(subGenre) {
+        const genre = document.getElementById('genre')?.value;
+
+        if (genre && subGenre) {
+            try {
+                const validation = await this.validateSubGenreSelection(genre, subGenre);
+                if (!validation.valid) {
+                    this.showValidationWarning('Sub-genre', validation.message || 'Invalid combination');
+                    document.getElementById('sub_genre').value = ''; // Clear invalid selection
+                }
+            } catch (error) {
+                console.warn('Sub-genre validation failed:', error);
+            }
+        }
+
+        this.validateCurrentStep();
+    }
+
+    /**
+     * Update sub-genre options using structured backend system
+     */
+    async updateSubGenreOptions(genre) {
+        console.log(`🏷️  Updating sub-genres for genre: ${genre}`);
+
+        const subGenreSelect = document.getElementById('sub_genre');
+        if (!subGenreSelect) {
+            console.warn('Sub-genre select element not found');
+            return;
+        }
+
+        try {
+            // Clear existing options first
+            this.clearSubGenreOptions();
+
+            // Fetch genre-specific sub-genres from the new API endpoint
+            const response = await fetch(`${this.apiBaseUrl}/subgenres/${genre}`);
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            console.log(`📊 Sub-genre API response:`, data);
+
+            if (!data.success && data.count === 0) {
+                console.warn(`No sub-genres available for genre: ${genre}`);
+                this.showSubGenreMessage(`No specific sub-genres available for ${genre.replace('_', ' ')}`);
+                return;
+            }
+
+            const subGenres = data.subgenres || [];
+
+            if (subGenres.length === 0) {
+                console.warn(`Empty sub-genres list for genre: ${genre}`);
+                this.showSubGenreMessage('No sub-genres available');
+                return;
+            }
+
+            // Populate the sub-genre dropdown
+            subGenres.forEach(([value, label]) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                subGenreSelect.appendChild(option);
+            });
+
+            // Update metadata display
+            this.updateSubGenreMetadata(data);
+
+            console.log(`✅ Successfully loaded ${subGenres.length} sub-genres for ${genre}`);
+
+        } catch (error) {
+            console.error('❌ Failed to fetch sub-genres from API:', error);
+
+            // Fallback: try to use cached enum data
+            console.log('🔄 Attempting fallback to cached sub-genre data...');
+            this.updateSubGenreOptionsFallback(genre);
+        }
+    }
+
+    /**
+     * Clear sub-genre options and reset to placeholder
+     */
+    clearSubGenreOptions() {
+        const subGenreSelect = document.getElementById('sub_genre');
+        if (!subGenreSelect) return;
+
+        // Remove all options except the first one (placeholder)
+        while (subGenreSelect.children.length > 1) {
+            subGenreSelect.removeChild(subGenreSelect.lastChild);
+        }
+
+        // Reset selection to placeholder
+        subGenreSelect.value = '';
+
+        // Clear any metadata display
+        this.clearSubGenreMetadata();
+    }
+
+    /**
+     * Set loading state for sub-genre field
+     */
+    setSubGenreLoading(isLoading) {
+        const subGenreSelect = document.getElementById('sub_genre');
+        if (!subGenreSelect) return;
+
+        if (isLoading) {
+            subGenreSelect.disabled = true;
+
+            // Add loading option
+            const loadingOption = document.createElement('option');
+            loadingOption.value = '';
+            loadingOption.textContent = 'Loading sub-genres...';
+            loadingOption.id = 'sub-genre-loading';
+            loadingOption.disabled = true;
+            subGenreSelect.appendChild(loadingOption);
+
+        } else {
+            subGenreSelect.disabled = false;
+
+            // Remove loading option
+            const loadingOption = document.getElementById('sub-genre-loading');
+            if (loadingOption) {
+                loadingOption.remove();
+            }
+        }
+    }
+
+    /**
+     * Show a message in the sub-genre field
+     */
+    showSubGenreMessage(message) {
+        const subGenreSelect = document.getElementById('sub_genre');
+        if (!subGenreSelect) return;
+
+        const messageOption = document.createElement('option');
+        messageOption.value = '';
+        messageOption.textContent = message;
+        messageOption.disabled = true;
+        messageOption.style.fontStyle = 'italic';
+        messageOption.style.color = '#7f8c8d';
+        subGenreSelect.appendChild(messageOption);
+    }
+
+    /**
+     * Update sub-genre metadata display
+     */
+    updateSubGenreMetadata(data) {
+        const metadataElement = document.getElementById('sub_genre-metadata');
+        if (!metadataElement) return;
+
+        if (data.count > 0) {
+            metadataElement.textContent = `${data.count} specialized sub-genres available`;
+            metadataElement.style.color = '#16a085';
+        } else {
+            metadataElement.textContent = 'General genre - no specific sub-genres';
+            metadataElement.style.color = '#7f8c8d';
+        }
+    }
+
+    /**
+     * Clear sub-genre metadata display
+     */
+    clearSubGenreMetadata() {
+        const metadataElement = document.getElementById('sub_genre-metadata');
+        if (metadataElement) {
+            metadataElement.textContent = '';
+        }
+    }
+
+    /**
+     * Fallback method using cached enum data
+     */
+    updateSubGenreOptionsFallback(genre) {
+        console.log(`🔄 Using fallback sub-genre population for: ${genre}`);
+
+        const subGenreSelect = document.getElementById('sub_genre');
+        const allSubGenres = this.enumData.SubGenre || [];
+
+        // Clear existing options
+        this.clearSubGenreOptions();
+
+        // Simple keyword-based filtering for fallback
+        const genreKeywords = this.getGenreKeywords(genre);
+        const filteredSubGenres = this.filterSubGenresByKeywords(allSubGenres, genreKeywords);
+
+        if (filteredSubGenres.length === 0) {
+            this.showSubGenreMessage('No sub-genres available');
+            console.warn(`❌ No fallback sub-genres found for: ${genre}`);
+            return;
+        }
+
+        // Add filtered sub-genres
+        filteredSubGenres.forEach(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            subGenreSelect.appendChild(option);
+        });
+
+        console.log(`⚠️ Fallback: Added ${filteredSubGenres.length} sub-genres for ${genre}`);
+    }
+
+    /**
+     * Get keywords for genre-based filtering
+     */
+    getGenreKeywords(genre) {
+        const keywordMap = {
+            'fantasy': ['fantasy', 'magical', 'epic', 'sword', 'dark', 'high', 'low', 'urban'],
+            'science_fiction': ['science', 'space', 'cyber', 'steam', 'hard', 'soft', 'dystopian', 'time'],
+            'mystery': ['mystery', 'detective', 'police', 'cozy', 'hard', 'locked'],
+            'romance': ['romance', 'romantic', 'contemporary', 'historical', 'paranormal', 'erotic'],
+            'thriller': ['thriller', 'psychological', 'legal', 'medical', 'espionage', 'techno'],
+            'horror': ['horror', 'supernatural', 'psychological', 'gothic', 'cosmic', 'body'],
+            'business': ['business', 'entrepreneurship', 'leadership', 'marketing', 'finance', 'management'],
+            'self_help': ['personal', 'productivity', 'relationships', 'spirituality', 'career', 'parenting'],
+            'technology': ['programming', 'software', 'data', 'artificial', 'cybersecurity', 'web'],
+            'biography': ['political', 'celebrity', 'historical', 'business', 'sports', 'artist'],
+            'memoir': ['family', 'travel', 'spiritual', 'addiction', 'illness', 'celebrity'],
+            'history': ['ancient', 'medieval', 'modern', 'military', 'social', 'cultural'],
+            'science': ['physics', 'biology', 'chemistry', 'astronomy', 'earth', 'environmental']
+        };
+
+        return keywordMap[genre] || [genre.replace('_', '')];
+    }
+
+    /**
+     * Filter sub-genres by keywords
+     */
+    filterSubGenresByKeywords(allSubGenres, keywords) {
+        return allSubGenres.filter(([value, label]) => {
+            const valueLower = value.toLowerCase();
+            const labelLower = label.toLowerCase();
+
+            return keywords.some(keyword =>
+                valueLower.includes(keyword.toLowerCase()) ||
+                labelLower.includes(keyword.toLowerCase())
+            );
+        }).slice(0, 15); // Limit to 15 options
+    }
+
+    /**
+     * Update world type visibility based on genre
+     */
+    updateWorldTypeVisibility(genre) {
+        // This method can be expanded based on genre
+        const magicSystemGroup = document.getElementById('magic-system-group');
+        const fictionGenres = ['fantasy', 'science_fiction', 'horror', 'paranormal', 'urban_fantasy'];
+
+        if (fictionGenres.includes(genre)) {
+            // Enable magic system for fiction genres that might use it
+            this.enableMagicSystemField();
+        }
+    }
+
+    /**
+     * Enable magic system field
+     */
+    enableMagicSystemField() {
+        const magicSystemGroup = document.getElementById('magic-system-group');
+        if (magicSystemGroup) {
+            // This will be handled by the existing world type change handler
+            // Just ensuring it's available
+        }
+    }
+
+    /**
+     * Validate sub-genre selection against genre
+     */
+    async validateSubGenreSelection(genre, subGenre) {
+        if (!subGenre || subGenre === '') {
+            return { valid: true, message: 'No sub-genre selected' };
+        }
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/validate/genre-subgenre`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ genre, subgenre: subGenre })
+            });
+
+            if (response.ok) {
+                return await response.json();
+            } else {
+                return { valid: false, message: 'Validation service unavailable' };
+            }
+        } catch (error) {
+            console.warn('Sub-genre validation failed:', error);
+            return { valid: true, message: 'Validation skipped due to error' };
+        }
     }
 
     /**
@@ -299,24 +622,6 @@ class BookPlannerWizard {
     }
 
     /**
-     * Remove hardcoded recommendation function - now uses backend data
-     */
-
-    /**
-     * Handle genre selection changes
-     */
-    async onGenreChange(genre) {
-        if (genre) {
-            await this.showGenreRecommendations(genre);
-            this.updateSubGenreOptions(genre);
-            this.updateMetadataDisplay('genre', genre);
-        } else {
-            this.hideRecommendations();
-        }
-        this.validateCurrentStep();
-    }
-
-    /**
      * Update metadata display for form fields
      */
     updateMetadataDisplay(fieldType, value) {
@@ -332,6 +637,16 @@ class BookPlannerWizard {
         }
 
         metadataElement.textContent = metadata;
+    }
+
+    /**
+     * Clear metadata display for form fields
+     */
+    clearMetadataDisplay(fieldType) {
+        const metadataElement = document.getElementById(`${fieldType}-metadata`);
+        if (metadataElement) {
+            metadataElement.textContent = '';
+        }
     }
 
     /**
@@ -367,71 +682,6 @@ class BookPlannerWizard {
     }
 
     /**
-     * Update sub-genre options based on main genre
-     */
-    updateSubGenreOptions(genre) {
-        const subGenreSelect = document.getElementById('sub_genre');
-
-        // Clear existing options except the first one
-        while (subGenreSelect.children.length > 1) {
-            subGenreSelect.removeChild(subGenreSelect.lastChild);
-        }
-
-        // Get genre-specific sub-genres from backend recommendations
-        const genreSubGenres = this.getSubGenresFromBackend(genre);
-        genreSubGenres.forEach(([value, label]) => {
-            const option = document.createElement('option');
-            option.value = value;
-            option.textContent = label;
-            subGenreSelect.appendChild(option);
-        });
-    }
-
-    /**
-     * Get sub-genres from backend data
-     */
-    getSubGenresFromBackend(genre) {
-        // First try to get from recommendations
-        if (this.recommendations && this.recommendations[genre] && this.recommendations[genre].sub_genres) {
-            const subGenres = this.recommendations[genre].sub_genres;
-            return subGenres.map(sg => [sg, this.formatEnumLabel(sg)]);
-        }
-
-        // Fallback to filtering all sub-genres by genre prefix
-        const allSubGenres = this.enumData.SubGenre || [];
-        const genreBasedFilter = this.getGenreBasedSubGenreFilter(genre);
-
-        return allSubGenres.filter(([value]) =>
-            genreBasedFilter.some(filter => value.includes(filter))
-        );
-    }
-
-    /**
-     * Get genre-based filter terms for sub-genres
-     */
-    getGenreBasedSubGenreFilter(genre) {
-        const genreFilters = {
-            fantasy: ['fantasy', 'sword', 'epic', 'dark'],
-            science_fiction: ['space', 'cyber', 'hard', 'soft'],
-            mystery: ['mystery', 'detective', 'police', 'cozy'],
-            romance: ['romance', 'romantic'],
-            thriller: ['thriller', 'suspense'],
-            horror: ['horror', 'gothic']
-        };
-
-        return genreFilters[genre] || [];
-    }
-
-    /**
-     * Format enum value to readable label
-     */
-    formatEnumLabel(value) {
-        return value
-            .replace(/_/g, ' ')
-            .replace(/\b\w/g, l => l.toUpperCase());
-    }
-
-    /**
      * Handle checkbox group changes with limits
      */
     handleCheckboxGroupChange(group, checkbox) {
@@ -464,6 +714,25 @@ class BookPlannerWizard {
     }
 
     /**
+     * Show validation warning
+     */
+    showValidationWarning(field, message) {
+        const warningContainer = document.getElementById('validation-warnings');
+        if (!warningContainer) return;
+
+        warningContainer.innerHTML = `
+            <div class="warning-box">
+                <h4>⚠️ Validation Issue</h4>
+                <p><strong>${field}:</strong> ${message}</p>
+            </div>
+        `;
+
+        setTimeout(() => {
+            warningContainer.innerHTML = '';
+        }, 5000);
+    }
+
+    /**
      * Show an error message
      */
     showError(message) {
@@ -471,14 +740,32 @@ class BookPlannerWizard {
     }
 
     /**
-     * Validate the current step
+     * Enhanced form validation that includes sub-genre validation
      */
-    validateCurrentStep() {
+    async validateCurrentStep() {
         const requiredFields = this.getRequiredFieldsForStep(this.currentStep);
-        const isValid = requiredFields.every(fieldId => {
+        const basicValidation = requiredFields.every(fieldId => {
             const field = document.getElementById(fieldId);
             return field && field.value.trim() !== '';
         });
+
+        let subGenreValidation = { valid: true };
+
+        // Additional validation for step 1 (genre/sub-genre combination)
+        if (this.currentStep === 1) {
+            const genre = document.getElementById('genre')?.value;
+            const subGenre = document.getElementById('sub_genre')?.value;
+
+            if (genre && subGenre) {
+                subGenreValidation = await this.validateSubGenreSelection(genre, subGenre);
+
+                if (!subGenreValidation.valid) {
+                    this.showValidationWarning('Sub-genre selection', subGenreValidation.message);
+                }
+            }
+        }
+
+        const isValid = basicValidation && subGenreValidation.valid;
 
         // Update button states
         const nextBtn = document.getElementById('next-btn');
@@ -735,6 +1022,66 @@ class BookPlannerWizard {
 
         this.updateStepDisplay();
     }
+
+    /**
+     * Debug method to test the new sub-genre system
+     */
+    async debugSubGenreSystem() {
+        console.log('🧪 Testing Sub-Genre System');
+
+        try {
+            // Test the debug endpoint
+            const response = await fetch(`${this.apiBaseUrl}/debug/subgenres`);
+            const debugData = await response.json();
+
+            console.log('📊 Debug data:', debugData);
+
+            // Test specific genre
+            const genreData = await fetch(`${this.apiBaseUrl}/subgenres/fantasy`);
+            const fantasySubGenres = await genreData.json();
+
+            console.log('🧙 Fantasy sub-genres:', fantasySubGenres);
+
+            return {
+                debugData,
+                fantasySubGenres,
+                status: 'success'
+            };
+
+        } catch (error) {
+            console.error('❌ Debug test failed:', error);
+            return {
+                error: error.message,
+                status: 'failed'
+            };
+        }
+    }
+
+    /**
+     * Test sub-genre loading for a specific genre
+     */
+    async testSubGenreLoading(genre = 'fantasy') {
+        console.log(`🧪 Testing sub-genre loading for: ${genre}`);
+
+        try {
+            const response = await fetch(`${this.apiBaseUrl}/subgenres/${genre}`);
+            const data = await response.json();
+            console.log('✅ Sub-genre data:', data);
+            return data;
+        } catch (error) {
+            console.error('❌ Test failed:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Format enum value to readable label
+     */
+    formatEnumLabel(value) {
+        return value
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, l => l.toUpperCase());
+    }
 }
 
 // Initialize the wizard when page loads
@@ -747,11 +1094,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Expose wizard for debugging
+// Expose wizard for debugging - ENHANCED WITH SUB-GENRE TESTING
 if (typeof window !== 'undefined') {
     window.MuseQuillDebug = {
         getWizard: () => window.bookPlannerWizard,
         getFormData: () => window.bookPlannerWizard?.getFormData(),
-        resetWizard: () => window.bookPlannerWizard?.reset()
+        resetWizard: () => window.bookPlannerWizard?.reset(),
+
+        // New sub-genre testing methods
+        testSubGenres: () => window.bookPlannerWizard?.debugSubGenreSystem(),
+        getSubGenresFor: (genre) => fetch(`${window.bookPlannerWizard?.apiBaseUrl}/subgenres/${genre}`).then(r => r.json()),
+        validateGenreSubGenre: (genre, subgenre) =>
+            fetch(`${window.bookPlannerWizard?.apiBaseUrl}/validate/genre-subgenre`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ genre, subgenre })
+            }).then(r => r.json()),
+
+        // Test specific genre sub-genre loading
+        testGenre: (genre) => window.bookPlannerWizard?.testSubGenreLoading(genre),
+
+        // Test API connectivity
+        testAPI: async () => {
+            const wizard = window.bookPlannerWizard;
+            if (!wizard) return { error: 'Wizard not initialized' };
+
+            try {
+                const health = await fetch(`${wizard.apiBaseUrl}/health`).then(r => r.json());
+                const enums = await fetch(`${wizard.apiBaseUrl}/enums`).then(r => r.json());
+                const fantasy = await fetch(`${wizard.apiBaseUrl}/subgenres/fantasy`).then(r => r.json());
+
+                return {
+                    health,
+                    enumCount: Object.keys(enums.enums || {}).length,
+                    fantasySubGenres: fantasy.count || 0,
+                    status: 'success'
+                };
+            } catch (error) {
+                return { error: error.message, status: 'failed' };
+            }
+        }
     };
 }

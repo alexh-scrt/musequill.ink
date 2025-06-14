@@ -54,7 +54,15 @@ from musequill.api.model import (
     BookCreationResponse,
     BookStatusResponse,
     EnumChoice,
-    EnumData
+    EnumData,
+    GenreSubgenreValidationRequest,
+    validate_book_genre_subgenre
+)
+from musequill.models.subgenre import (
+    SubGenreRegistry, 
+    SubGenre,
+    get_subgenres_for_frontend,
+    validate_book_genre_subgenre
 )
 from musequill.agents.factory import AgentFactory
 from musequill.routers.planning import planning_router
@@ -216,11 +224,14 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     )
 
-
-
 def enum_to_choices(enum_class) -> List[List[str]]:
-    """Convert enum to choices format."""
-    return [[item.value, item.value.replace('_', ' ').title()] for item in enum_class]
+    """Convert enum to choices format - handles both regular enums and dynamic SubGenre."""
+    if enum_class == SubGenre:
+        # For the master SubGenre enum, get all sub-genres
+        return SubGenreRegistry.get_all_subgenres()
+    else:
+        # For regular enums
+        return [[item.value, item.value.replace('_', ' ').title()] for item in enum_class]
 
 
 def get_enum_metadata():
@@ -332,7 +343,7 @@ async def get_enums() -> EnumData:
     
     all_enums = {
         "GenreType": enum_to_choices(GenreType),
-        "SubGenre": enum_to_choices(SubGenre),
+        "SubGenre": SubGenreRegistry.get_all_subgenres(),  # Use the new system
         "BookLength": enum_to_choices(BookLength),
         "StoryStructure": enum_to_choices(StoryStructure),
         "PlotType": enum_to_choices(PlotType),
@@ -362,50 +373,134 @@ async def get_enums() -> EnumData:
         recommendations=get_comprehensive_recommendations()
     )
 
+@app.get("/api/subgenres/{genre}")
+async def get_subgenres_for_genre(genre: str) -> Dict[str, Any]:
+    """Get available subgenres for a specific genre."""
+    
+    try:
+        subgenres_data = get_subgenres_for_frontend(genre)
+        return {
+            "genre": genre,
+            "subgenres": subgenres_data["subgenres"],
+            "count": subgenres_data["count"],
+            "enum_class": subgenres_data["enum_class"]
+        }
+    except Exception as e:
+        logger.error(f"Error getting subgenres for {genre}: {str(e)}")
+        return {
+            "genre": genre,
+            "subgenres": [],
+            "count": 0,
+            "error": str(e)
+        }
 
-@app.get("/api/enums/{enum_name}")
-async def get_specific_enum(enum_name: str) -> Dict[str, Any]:
-    """Get specific enum data with detailed metadata."""
-    enum_mapping = {
-        "GenreType": GenreType,
-        "SubGenre": SubGenre,
-        "BookLength": BookLength,
-        "StoryStructure": StoryStructure,
-        "PlotType": PlotType,
-        "NarrativePOV": NarrativePOV,
-        "PacingType": PacingType,
-        "ConflictType": ConflictType,
-        "CharacterRole": CharacterRole,
-        "CharacterArchetype": CharacterArchetype,
-        "WorldType": WorldType,
-        "MagicSystemType": MagicSystemType,
-        "TechnologyLevel": TechnologyLevel,
-        "WritingStyle": WritingStyle,
-        "ToneType": ToneType,
-        "AgeGroup": AgeGroup,
-        "AudienceType": AudienceType,
-        "ReadingLevel": ReadingLevel,
-        "PublicationRoute": PublicationRoute,
-        "ContentWarning": ContentWarning,
-        "AIAssistanceLevel": AIAssistanceLevel,
-        "ResearchPriority": ResearchPriority,
-        "WritingSchedule": WritingSchedule
-    }
-    
-    if enum_name not in enum_mapping:
-        raise HTTPException(status_code=404, detail=f"Enum '{enum_name}' not found")
-    
-    enum_class = enum_mapping[enum_name]
-    metadata = get_enum_metadata().get(enum_name, {})
+@app.post("/api/validate/genre-subgenre")
+async def validate_genre_subgenre(request: GenreSubgenreValidationRequest) -> Dict[str, Any]:
+    """Validate genre and subgenre combination via JSON body."""  
+
+    try:
+        # Validate the combination
+        validation_result = validate_book_genre_subgenre(request.genre, request.subgenre)
+        
+        return {
+            "valid": validation_result["valid"],
+            "genre": request.genre,
+            "subgenre": request.subgenre,
+            "message": "Valid combination" if validation_result["valid"] else validation_result.get("error", "Invalid combination"),
+            "suggestions": validation_result.get("suggestions", []) if not validation_result["valid"] else []
+        }
+        
+    except Exception as e:
+        logger.error(f"Error validating genre-subgenre: {str(e)}")
+        return {
+            "valid": False,
+            "genre": request.genre,
+            "subgenre": request.subgenre,
+            "message": f"Validation error: {str(e)}",
+            "suggestions": []
+        }
+
+@app.get("/api/subgenres")
+async def get_all_subgenres() -> Dict[str, Any]:
+    """Get all available sub-genres across all genres."""
+    all_subgenres = SubGenreRegistry.get_all_subgenres()
     
     return {
-        "name": enum_name,
-        "choices": enum_to_choices(enum_class),
-        "metadata": get_enum_with_metadata(enum_class),
-        "description": metadata.get("description", ""),
-        "additional_metadata": metadata
+        "subgenres": all_subgenres,
+        "total_count": len(all_subgenres),
+        "by_genre": {
+            genre: SubGenreRegistry.get_subgenre_choices(genre)
+            for genre in SubGenreRegistry.GENRE_SUBGENRE_MAP.keys()
+        }
     }
 
+@app.get("/api/genres/{genre}/info")
+async def get_genre_info(genre: str) -> Dict[str, Any]:
+    """Get comprehensive information about a specific genre."""
+    try:
+        # Validate genre exists
+        genre_enum = GenreType(genre)
+        
+        # Get sub-genres
+        subgenres = SubGenreRegistry.get_subgenre_choices(genre)
+        
+        # Get metadata if available
+        metadata = get_enum_metadata()
+        genre_metadata = metadata.get("GenreType", {})
+        
+        return {
+            "genre": genre,
+            "display_name": genre.replace('_', ' ').title(),
+            "is_fiction": genre_enum.is_fiction,
+            "subgenres": {
+                "available": subgenres,
+                "count": len(subgenres),
+                "enum_class": SubGenreRegistry.get_subgenres_for_genre(genre).__name__ if SubGenreRegistry.get_subgenres_for_genre(genre) else None
+            },
+            "metadata": {
+                "popularity": genre_metadata.get("popularity", {}).get(genre, 5),
+                "difficulty": genre_metadata.get("difficulty", {}).get(genre, 5),
+                "market_viability": genre_metadata.get("market_viability", {}).get(genre, 5)
+            },
+            "recommendations": get_genre_recommendations(genre_enum) if hasattr(genre_enum, '__call__') else {}
+        }
+        
+    except ValueError:
+        raise HTTPException(status_code=404, detail=f"Genre '{genre}' not found")
+
+@app.get("/api/debug/subgenres")
+async def debug_subgenres() -> Dict[str, Any]:
+    """Debug endpoint to test the sub-genre system."""
+    debug_info = {}
+    
+    # Test a few genres
+    test_genres = ["fantasy", "science_fiction", "business", "self_help", "mystery"]
+    
+    for genre in test_genres:
+        try:
+            subgenres = SubGenreRegistry.get_subgenre_choices(genre)
+            debug_info[genre] = {
+                "subgenre_count": len(subgenres),
+                "subgenres": subgenres[:3],  # First 3 for brevity
+                "enum_class": SubGenreRegistry.get_subgenres_for_genre(genre).__name__ if SubGenreRegistry.get_subgenres_for_genre(genre) else None
+            }
+        except Exception as e:
+            debug_info[genre] = {"error": str(e)}
+    
+    # Test validation
+    debug_info["validation_tests"] = {
+        "fantasy_high_fantasy": validate_book_genre_subgenre("fantasy", "high_fantasy"),
+        "fantasy_entrepreneurship": validate_book_genre_subgenre("fantasy", "entrepreneurship"),
+        "business_marketing": validate_book_genre_subgenre("business", "marketing")
+    }
+    
+    # Master enum info
+    debug_info["master_enum"] = {
+        "total_subgenres": len(SubGenre),
+        "sample_values": [item.value for item in list(SubGenre)[:5]]
+    }
+    
+    return debug_info
 
 @app.get("/api/recommendations/{genre}")
 async def get_recommendations(genre: str) -> Dict[str, List[str]]:
@@ -547,6 +642,18 @@ async def create_book(
     """Create a new book plan based on user parameters with AI agent planning."""
     
     try:
+        if request.sub_genre:
+            validation_result = validate_book_genre_subgenre(request.genre.value, request.sub_genre)
+            if not validation_result['valid']:
+                raise HTTPException(
+                    status_code=422, 
+                    detail={
+                        "message": "Invalid genre/sub-genre combination",
+                        "error": validation_result['error'],
+                        "valid_subgenres": validation_result.get('valid_subgenres', [])
+                    }
+                )
+
         # Generate unique book ID
         book_id = uuid4()
         
@@ -593,7 +700,16 @@ async def create_book(
             "estimated_chapters": estimated_chapters,
             "completion_percentage": 0.0,
             "validation_warnings": validation_warnings,
-            
+            "genre_info": {
+                "genre": request.genre.value,
+                "sub_genre": request.sub_genre,
+                "is_fiction": request.genre.is_fiction,
+                "available_subgenres": SubGenreRegistry.get_subgenre_choices(request.genre.value)
+            },
+            "validation_info": {
+                "genre_subgenre_valid": True if not request.sub_genre else validate_book_genre_subgenre(request.genre.value, request.sub_genre)['valid'],
+                "warnings": validate_enum_combination(request.dict())
+            },         
             # Agent-related fields
             "agent_id": None,
             "planning_results": None,
