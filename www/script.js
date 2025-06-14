@@ -15,6 +15,72 @@ class BookPlannerWizard {
         this.init();
     }
 
+    // Add this debug function to your BookPlannerWizard class
+    // Call this function in browser console to debug:
+    // window.bookPlannerWizard.debugSurpriseGeneration()
+    debugSurpriseGeneration() {
+        console.log('🔧 DEBUG: Testing surprise generation...');
+
+        // Test 1: Check enum data loading
+        console.log('📊 AudienceType enum structure:', {
+            exists: !!this.enumData.AudienceType,
+            isArray: Array.isArray(this.enumData.AudienceType),
+            length: this.enumData.AudienceType?.length,
+            first5: this.enumData.AudienceType?.slice(0, 5),
+            extracted: this.enumData.AudienceType
+                ?.filter(type => Array.isArray(type) && type.length > 0)
+                ?.map(type => type[0])
+                ?.slice(0, 5)
+        });
+
+        // Test 2: Test audience type generation for different age groups
+        const ageGroups = ['children', 'middle_grade', 'young_adult', 'adult'];
+        const audienceResults = {};
+
+        ageGroups.forEach(ageGroup => {
+            try {
+                const result = this.getAgeAppropriateAudienceType(ageGroup);
+                audienceResults[ageGroup] = {
+                    result: result,
+                    isString: typeof result === 'string',
+                    length: result?.length,
+                    isValid: this.validateEnumValue(result, 'AudienceType')
+                };
+            } catch (error) {
+                audienceResults[ageGroup] = { error: error.message };
+            }
+        });
+
+        console.log('🎯 Audience type generation results:', audienceResults);
+
+        // Test 3: Try generating a full surprise selection
+        try {
+            console.log('🎲 Testing full surprise generation...');
+            this.generateSmartRandomSelections().then(selections => {
+                console.log('📋 Generated selections:', {
+                    audience_type: selections.audience_type,
+                    age_group: selections.age_group,
+                    full_selections: selections
+                });
+
+                // Test validation
+                const isValidAudience = this.validateEnumValue(selections.audience_type, 'AudienceType');
+                console.log(`✅ Audience type validation: ${isValidAudience} for "${selections.audience_type}"`);
+
+                if (!isValidAudience) {
+                    console.error('❌ FOUND THE BUG: audience_type validation failed!');
+                    console.log('🔍 Available valid values:',
+                        this.enumData.AudienceType
+                            ?.filter(type => Array.isArray(type) && type.length > 0)
+                            ?.map(type => type[0])
+                    );
+                }
+            });
+        } catch (error) {
+            console.error('❌ Error in surprise generation:', error);
+        }
+    }
+
     /**
      * Determine API base URL based on environment
      */
@@ -1495,7 +1561,7 @@ class BookPlannerWizard {
     }
 
     /**
-     * Get age-appropriate audience type
+     * Get age-appropriate audience type - FIXED VERSION
      */
     getAgeAppropriateAudienceType(ageGroup) {
         // Debug logging
@@ -1509,9 +1575,16 @@ class BookPlannerWizard {
         }
 
         // Get all available audience type values from the actual enum data
+        // FIX: More robust extraction of enum values
         const allAudienceTypes = this.enumData.AudienceType
-            .filter(type => Array.isArray(type) && type.length > 0)
-            .map(type => type[0]);
+            .filter(type => {
+                // Handle both array format [value, label] and direct string values
+                if (Array.isArray(type) && type.length > 0) {
+                    return typeof type[0] === 'string' && type[0].length > 0;
+                }
+                return typeof type === 'string' && type.length > 0;
+            })
+            .map(type => Array.isArray(type) ? type[0] : type);
 
         console.log(`📋 All available audience types:`, allAudienceTypes);
 
@@ -1538,16 +1611,26 @@ class BookPlannerWizard {
             const randomIndex = Math.floor(Math.random() * validAppropriateTypes.length);
             const selectedType = validAppropriateTypes[randomIndex];
             console.log(`🎲 Selected audience type: ${selectedType}`);
-            return selectedType;
+
+            // FIX: Additional validation to ensure we're returning a complete, valid value
+            if (selectedType && typeof selectedType === 'string' && selectedType.length > 2) {
+                return selectedType;
+            } else {
+                console.warn(`Selected type "${selectedType}" appears invalid, using general_readers fallback`);
+                return 'general_readers';
+            }
         } else {
             // Fallback: if none of our appropriate types exist, just pick 'general_readers' if it exists
             if (allAudienceTypes.includes('general_readers')) {
                 console.warn(`No appropriate audience types found for age group ${ageGroup}, using general_readers`);
                 return 'general_readers';
             } else {
-                // Last resort: pick the first available audience type
-                const fallback = allAudienceTypes[0] || 'general_readers';
-                console.warn(`general_readers not found, using first available: ${fallback}`);
+                // Last resort: pick the first available audience type, but validate it first
+                const fallback = allAudienceTypes.find(type =>
+                    type && typeof type === 'string' && type.length > 2
+                ) || 'general_readers';
+
+                console.warn(`general_readers not found, using first valid available: ${fallback}`);
                 return fallback;
             }
         }
