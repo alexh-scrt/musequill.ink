@@ -4,305 +4,529 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MuseQuill.ink - Book Planner</title>
+    <title>MuseQuill.ink - AI-Powered Book Creation Portal</title>
+    <meta name="description"
+        content="Create your next masterpiece with AI-assisted book planning. Define parameters, structure, and let our intelligent system guide your writing journey.">
+
+    <!-- Preload critical fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <!-- Favicon -->
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🖋️</text></svg>">
+
+    <!-- Stylesheets -->
     <link rel="stylesheet" href="style.css">
+
+    <!-- Meta tags for better SEO and social sharing -->
+    <meta property="og:title" content="MuseQuill.ink - AI-Powered Book Creation">
+    <meta property="og:description" content="Transform your book ideas into reality with intelligent AI assistance">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
 </head>
 
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🖋️ MuseQuill.ink Book Planner</h1>
-            <p>Define your book parameters and let AI help you create your masterpiece</p>
-        </div>
+    <!-- Background decorative elements -->
+    <div class="bg-decoration"></div>
 
-        <div class="wizard">
-            <div class="step-indicator">
-                <div class="step active" data-step="1">1. Book Basics</div>
-                <div class="step" data-step="2">2. Story Structure</div>
-                <div class="step" data-step="3">3. Characters & World</div>
-                <div class="step" data-step="4">4. Writing Style</div>
-                <div class="step" data-step="5">5. Audience & Publishing</div>
-                <div class="step" data-step="6">6. AI Assistance</div>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1>
+                    <span class="header-icon">🖋️</span>
+                    MuseQuill.ink
+                    <span class="header-subtitle">Book Creation Portal</span>
+                </h1>
+                <p>Transform your ideas into compelling narratives with AI-powered assistance. Define your vision, and
+                    let our intelligent system craft the perfect blueprint for your literary masterpiece.</p>
+                <div class="header-stats">
+                    <div class="stat-item">
+                        <span class="stat-number">10K+</span>
+                        <span class="stat-label">Books Planned</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number">95%</span>
+                        <span class="stat-label">Completion Rate</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number">4.9★</span>
+                        <span class="stat-label">User Rating</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="wizard" role="main">
+            <!-- Enhanced step indicator with progress -->
+            <div class="step-indicator" role="tablist" aria-label="Book creation steps">
+                <button class="step active" data-step="1" role="tab" aria-selected="true" aria-controls="step-1">
+                    <span class="step-number">1</span>
+                    <span class="step-text">Book Basics</span>
+                </button>
+                <button class="step" data-step="2" role="tab" aria-selected="false" aria-controls="step-2">
+                    <span class="step-number">2</span>
+                    <span class="step-text">Story Structure</span>
+                </button>
+                <button class="step" data-step="3" role="tab" aria-selected="false" aria-controls="step-3">
+                    <span class="step-number">3</span>
+                    <span class="step-text">Characters & World</span>
+                </button>
+                <button class="step" data-step="4" role="tab" aria-selected="false" aria-controls="step-4">
+                    <span class="step-number">4</span>
+                    <span class="step-text">Writing Style</span>
+                </button>
+                <button class="step" data-step="5" role="tab" aria-selected="false" aria-controls="step-5">
+                    <span class="step-number">5</span>
+                    <span class="step-text">Audience & Publishing</span>
+                </button>
+                <button class="step" data-step="6" role="tab" aria-selected="false" aria-controls="step-6">
+                    <span class="step-number">6</span>
+                    <span class="step-text">AI Assistance</span>
+                </button>
             </div>
 
             <div class="step-content">
                 <!-- Step 1: Book Basics -->
-                <div class="step-panel active" data-step="1">
-                    <h2 class="step-title">Book Basics</h2>
-                    <p class="step-description">Define the core concept and scope of your book</p>
-
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="title">Book Title *</label>
-                            <input type="text" id="title" name="title" placeholder="Enter your book title..." required>
-                            <div class="help-text">This can be changed later if you're not sure</div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="subtitle">Subtitle (Optional)</label>
-                            <input type="text" id="subtitle" name="subtitle" placeholder="Enter subtitle...">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="genre">Primary Genre *</label>
-                            <select id="genre" name="genre" required>
-                                <option value="">Select a genre...</option>
-                            </select>
-                            <div class="metadata-info" id="genre-metadata"></div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="sub_genre">Sub-Genre (Optional)</label>
-                            <select id="sub_genre" name="sub_genre">
-                                <option value="">Select a sub-genre...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="length">Target Length *</label>
-                            <select id="length" name="length" required>
-                                <option value="">Select target length...</option>
-                            </select>
-                            <div class="metadata-info" id="length-metadata"></div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="description">Book Description</label>
-                            <textarea id="description" name="description"
-                                placeholder="Briefly describe what your book will be about..."></textarea>
-                        </div>
+                <div class="step-panel active" data-step="1" id="step-1" role="tabpanel" aria-labelledby="step-1-tab">
+                    <div class="step-header">
+                        <h2 class="step-title">
+                            <span class="step-icon">📚</span>
+                            Book Basics
+                        </h2>
+                        <p class="step-description">Define the core concept and scope of your literary work</p>
                     </div>
 
-                    <div id="recommendations-1" class="recommendation-box" style="display: none;">
-                        <h4>💡 Recommendations based on your genre:</h4>
-                        <div class="recommendation-tags" id="genre-recommendations"></div>
-                    </div>
+                    <form class="step-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="title" class="required">Book Title</label>
+                                <input type="text" id="title" name="title" placeholder="Enter your book title..."
+                                    required aria-describedby="title-help">
+                                <div class="help-text" id="title-help">This can be refined later as your story develops
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="subtitle">Subtitle <span class="optional">(Optional)</span></label>
+                                <input type="text" id="subtitle" name="subtitle" placeholder="Enter subtitle..."
+                                    aria-describedby="subtitle-help">
+                                <div class="help-text" id="subtitle-help">Clarifies your book's focus or approach</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="genre" class="required">Primary Genre</label>
+                                <select id="genre" name="genre" required aria-describedby="genre-help">
+                                    <option value="">Select a genre...</option>
+                                </select>
+                                <div class="metadata-info" id="genre-metadata"></div>
+                                <div class="help-text" id="genre-help">Choose the main category that best describes your
+                                    book</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="sub_genre">Sub-Genre <span class="optional">(Optional)</span></label>
+                                <select id="sub_genre" name="sub_genre" aria-describedby="sub-genre-help">
+                                    <option value="">Select a sub-genre...</option>
+                                </select>
+                                <div class="help-text" id="sub-genre-help">More specific categorization within your
+                                    genre</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="length" class="required">Target Length</label>
+                                <select id="length" name="length" required aria-describedby="length-help">
+                                    <option value="">Select target length...</option>
+                                </select>
+                                <div class="metadata-info" id="length-metadata"></div>
+                                <div class="help-text" id="length-help">Determines scope and chapter structure</div>
+                            </div>
+
+                            <div class="form-group form-group-wide">
+                                <label for="description">Book Description</label>
+                                <textarea id="description" name="description"
+                                    placeholder="Briefly describe what your book will be about..."
+                                    aria-describedby="description-help"></textarea>
+                                <div class="help-text" id="description-help">A brief overview of your book's concept,
+                                    themes, or purpose</div>
+                            </div>
+                        </div>
+
+                        <div id="recommendations-1" class="recommendation-box" style="display: none;">
+                            <h4>
+                                <span class="recommendation-icon">💡</span>
+                                AI Recommendations based on your genre
+                            </h4>
+                            <div class="recommendation-tags" id="genre-recommendations"></div>
+                        </div>
+                    </form>
                 </div>
 
                 <!-- Step 2: Story Structure -->
-                <div class="step-panel" data-step="2">
-                    <h2 class="step-title">Story Structure</h2>
-                    <p class="step-description">Choose how your story will be organized and paced</p>
-
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="structure">Story Structure *</label>
-                            <select id="structure" name="structure" required>
-                                <option value="">Select a structure...</option>
-                            </select>
-                            <div class="metadata-info" id="structure-metadata"></div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="plot_type">Basic Plot Type</label>
-                            <select id="plot_type" name="plot_type">
-                                <option value="">Select a plot type...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="pov">Point of View *</label>
-                            <select id="pov" name="pov" required>
-                                <option value="">Select POV...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="pacing">Story Pacing</label>
-                            <select id="pacing" name="pacing">
-                                <option value="">Select pacing...</option>
-                            </select>
-                        </div>
+                <div class="step-panel" data-step="2" id="step-2" role="tabpanel" aria-labelledby="step-2-tab">
+                    <div class="step-header">
+                        <h2 class="step-title">
+                            <span class="step-icon">🏗️</span>
+                            Story Structure
+                        </h2>
+                        <p class="step-description">Choose how your narrative will be organized and paced</p>
                     </div>
 
-                    <div class="form-group">
-                        <label>Types of Conflict (Select up to 3)</label>
-                        <div class="checkbox-group" id="conflict-types">
-                            <!-- Populated by JavaScript -->
+                    <form class="step-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="structure" class="required">Story Structure</label>
+                                <select id="structure" name="structure" required aria-describedby="structure-help">
+                                    <option value="">Select a structure...</option>
+                                </select>
+                                <div class="metadata-info" id="structure-metadata"></div>
+                                <div class="help-text" id="structure-help">Framework for organizing your narrative flow
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="plot_type">Basic Plot Type</label>
+                                <select id="plot_type" name="plot_type" aria-describedby="plot-help">
+                                    <option value="">Select a plot type...</option>
+                                </select>
+                                <div class="help-text" id="plot-help">The fundamental story pattern or archetype</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pov" class="required">Point of View</label>
+                                <select id="pov" name="pov" required aria-describedby="pov-help">
+                                    <option value="">Select POV...</option>
+                                </select>
+                                <div class="help-text" id="pov-help">The narrative perspective from which the story is
+                                    told</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pacing">Story Pacing</label>
+                                <select id="pacing" name="pacing" aria-describedby="pacing-help">
+                                    <option value="">Select pacing...</option>
+                                </select>
+                                <div class="help-text" id="pacing-help">The rhythm and speed of your narrative
+                                    progression</div>
+                            </div>
                         </div>
-                    </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-group-label">Types of Conflict <span class="optional">(Select up to
+                                    3)</span></label>
+                            <div class="checkbox-group" id="conflict-types" role="group"
+                                aria-describedby="conflict-help">
+                                <!-- Populated by JavaScript -->
+                            </div>
+                            <div class="help-text" id="conflict-help">The primary sources of tension and challenge in
+                                your story</div>
+                        </div>
+                    </form>
                 </div>
 
                 <!-- Step 3: Characters & World -->
-                <div class="step-panel" data-step="3">
-                    <h2 class="step-title">Characters & World</h2>
-                    <p class="step-description">Define your main characters and story setting</p>
-
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="main_character_role">Main Character Type *</label>
-                            <select id="main_character_role" name="main_character_role" required>
-                                <option value="">Select character role...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="character_archetype">Character Archetype</label>
-                            <select id="character_archetype" name="character_archetype">
-                                <option value="">Select archetype...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="world_type">World Setting *</label>
-                            <select id="world_type" name="world_type" required>
-                                <option value="">Select world type...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group" id="magic-system-group" style="display: none;">
-                            <label for="magic_system">Magic System</label>
-                            <select id="magic_system" name="magic_system">
-                                <option value="">Select magic system...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="technology_level">Technology Level</label>
-                            <select id="technology_level" name="technology_level">
-                                <option value="">Select tech level...</option>
-                            </select>
-                        </div>
+                <div class="step-panel" data-step="3" id="step-3" role="tabpanel" aria-labelledby="step-3-tab">
+                    <div class="step-header">
+                        <h2 class="step-title">
+                            <span class="step-icon">🌍</span>
+                            Characters & World
+                        </h2>
+                        <p class="step-description">Define your main characters and the world they inhabit</p>
                     </div>
+
+                    <form class="step-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="main_character_role" class="required">Main Character Type</label>
+                                <select id="main_character_role" name="main_character_role" required
+                                    aria-describedby="character-role-help">
+                                    <option value="">Select character role...</option>
+                                </select>
+                                <div class="help-text" id="character-role-help">The primary character driving your story
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="character_archetype">Character Archetype</label>
+                                <select id="character_archetype" name="character_archetype"
+                                    aria-describedby="archetype-help">
+                                    <option value="">Select archetype...</option>
+                                </select>
+                                <div class="help-text" id="archetype-help">Universal character patterns that resonate
+                                    with readers</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="world_type" class="required">World Setting</label>
+                                <select id="world_type" name="world_type" required aria-describedby="world-help">
+                                    <option value="">Select world type...</option>
+                                </select>
+                                <div class="help-text" id="world-help">The reality level and nature of your story's
+                                    setting</div>
+                            </div>
+
+                            <div class="form-group" id="magic-system-group" style="display: none;">
+                                <label for="magic_system">Magic System</label>
+                                <select id="magic_system" name="magic_system" aria-describedby="magic-help">
+                                    <option value="">Select magic system...</option>
+                                </select>
+                                <div class="help-text" id="magic-help">How supernatural elements work in your world
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="technology_level">Technology Level</label>
+                                <select id="technology_level" name="technology_level" aria-describedby="tech-help">
+                                    <option value="">Select tech level...</option>
+                                </select>
+                                <div class="help-text" id="tech-help">The technological advancement of your world</div>
+                            </div>
+                        </div>
+                    </form>
                 </div>
 
                 <!-- Step 4: Writing Style -->
-                <div class="step-panel" data-step="4">
-                    <h2 class="step-title">Writing Style</h2>
-                    <p class="step-description">Define your writing approach and tone</p>
-
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="writing_style">Writing Style *</label>
-                            <select id="writing_style" name="writing_style" required>
-                                <option value="">Select writing style...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="tone">Overall Tone *</label>
-                            <select id="tone" name="tone" required>
-                                <option value="">Select tone...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="complexity">Content Complexity</label>
-                            <select id="complexity" name="complexity">
-                                <option value="">Select complexity...</option>
-                                <option value="very_easy">Very Easy</option>
-                                <option value="easy">Easy</option>
-                                <option value="moderate">Moderate</option>
-                                <option value="challenging">Challenging</option>
-                                <option value="very_challenging">Very Challenging</option>
-                                <option value="expert_level">Expert Level</option>
-                            </select>
-                        </div>
+                <div class="step-panel" data-step="4" id="step-4" role="tabpanel" aria-labelledby="step-4-tab">
+                    <div class="step-header">
+                        <h2 class="step-title">
+                            <span class="step-icon">✍️</span>
+                            Writing Style
+                        </h2>
+                        <p class="step-description">Define your narrative voice and approach</p>
                     </div>
+
+                    <form class="step-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="writing_style" class="required">Writing Style</label>
+                                <select id="writing_style" name="writing_style" required aria-describedby="style-help">
+                                    <option value="">Select writing style...</option>
+                                </select>
+                                <div class="help-text" id="style-help">Your overall approach to prose and storytelling
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="tone" class="required">Overall Tone</label>
+                                <select id="tone" name="tone" required aria-describedby="tone-help">
+                                    <option value="">Select tone...</option>
+                                </select>
+                                <div class="help-text" id="tone-help">The emotional atmosphere of your writing</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="complexity">Content Complexity</label>
+                                <select id="complexity" name="complexity" aria-describedby="complexity-help">
+                                    <option value="">Select complexity...</option>
+                                    <option value="very_easy">Very Easy</option>
+                                    <option value="easy">Easy</option>
+                                    <option value="moderate">Moderate</option>
+                                    <option value="challenging">Challenging</option>
+                                    <option value="very_challenging">Very Challenging</option>
+                                    <option value="expert_level">Expert Level</option>
+                                </select>
+                                <div class="help-text" id="complexity-help">The intellectual depth and difficulty level
+                                </div>
+                            </div>
+                        </div>
+                    </form>
                 </div>
 
                 <!-- Step 5: Audience & Publishing -->
-                <div class="step-panel" data-step="5">
-                    <h2 class="step-title">Audience & Publishing</h2>
-                    <p class="step-description">Define your target audience and publishing goals</p>
-
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="age_group">Target Age Group *</label>
-                            <select id="age_group" name="age_group" required>
-                                <option value="">Select age group...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="audience_type">Target Audience *</label>
-                            <select id="audience_type" name="audience_type" required>
-                                <option value="">Select audience...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="reading_level">Reading Level</label>
-                            <select id="reading_level" name="reading_level">
-                                <option value="">Select reading level...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="publication_route">Publishing Goal *</label>
-                            <select id="publication_route" name="publication_route" required>
-                                <option value="">Select publishing route...</option>
-                            </select>
-                        </div>
+                <div class="step-panel" data-step="5" id="step-5" role="tabpanel" aria-labelledby="step-5-tab">
+                    <div class="step-header">
+                        <h2 class="step-title">
+                            <span class="step-icon">🎯</span>
+                            Audience & Publishing
+                        </h2>
+                        <p class="step-description">Define your target readers and publishing strategy</p>
                     </div>
 
-                    <div class="form-group">
-                        <label>Content Warnings (if any)</label>
-                        <div class="checkbox-group" id="content-warnings">
-                            <!-- Populated by JavaScript -->
+                    <form class="step-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="age_group" class="required">Target Age Group</label>
+                                <select id="age_group" name="age_group" required aria-describedby="age-help">
+                                    <option value="">Select age group...</option>
+                                </select>
+                                <div class="help-text" id="age-help">Primary age demographic for your book</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="audience_type" class="required">Target Audience</label>
+                                <select id="audience_type" name="audience_type" required
+                                    aria-describedby="audience-help">
+                                    <option value="">Select audience...</option>
+                                </select>
+                                <div class="help-text" id="audience-help">Specific reader interests and backgrounds
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="reading_level">Reading Level</label>
+                                <select id="reading_level" name="reading_level" aria-describedby="reading-help">
+                                    <option value="">Select reading level...</option>
+                                </select>
+                                <div class="help-text" id="reading-help">Expected educational or reading proficiency
+                                    level</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="publication_route" class="required">Publishing Goal</label>
+                                <select id="publication_route" name="publication_route" required
+                                    aria-describedby="publishing-help">
+                                    <option value="">Select publishing route...</option>
+                                </select>
+                                <div class="help-text" id="publishing-help">Your intended path to publication</div>
+                            </div>
                         </div>
-                    </div>
+
+                        <div class="form-group">
+                            <label class="checkbox-group-label">Content Warnings <span class="optional">(if
+                                    any)</span></label>
+                            <div class="checkbox-group" id="content-warnings" role="group"
+                                aria-describedby="content-warnings-help">
+                                <!-- Populated by JavaScript -->
+                            </div>
+                            <div class="help-text" id="content-warnings-help">Alert readers to potentially sensitive
+                                content</div>
+                        </div>
+                    </form>
                 </div>
 
                 <!-- Step 6: AI Assistance -->
-                <div class="step-panel" data-step="6">
-                    <h2 class="step-title">AI Assistance</h2>
-                    <p class="step-description">Configure how MuseQuill AI will help you write</p>
-
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="ai_assistance_level">AI Assistance Level *</label>
-                            <select id="ai_assistance_level" name="ai_assistance_level" required>
-                                <option value="">Select assistance level...</option>
-                            </select>
-                            <div class="help-text">Higher levels provide more AI suggestions and automation</div>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="research_priority">Research Importance</label>
-                            <select id="research_priority" name="research_priority">
-                                <option value="">Select research priority...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="writing_schedule">Preferred Writing Schedule</label>
-                            <select id="writing_schedule" name="writing_schedule">
-                                <option value="">Select schedule...</option>
-                            </select>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="additional_notes">Additional Notes</label>
-                            <textarea id="additional_notes" name="additional_notes"
-                                placeholder="Any additional requirements or preferences..."></textarea>
-                        </div>
+                <div class="step-panel" data-step="6" id="step-6" role="tabpanel" aria-labelledby="step-6-tab">
+                    <div class="step-header">
+                        <h2 class="step-title">
+                            <span class="step-icon">🤖</span>
+                            AI Assistance
+                        </h2>
+                        <p class="step-description">Configure how our AI will support your creative process</p>
                     </div>
+
+                    <form class="step-form">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="ai_assistance_level" class="required">AI Assistance Level</label>
+                                <select id="ai_assistance_level" name="ai_assistance_level" required
+                                    aria-describedby="ai-help">
+                                    <option value="">Select assistance level...</option>
+                                </select>
+                                <div class="help-text" id="ai-help">Higher levels provide more suggestions and
+                                    automation</div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="research_priority">Research Importance</label>
+                                <select id="research_priority" name="research_priority"
+                                    aria-describedby="research-help">
+                                    <option value="">Select research priority...</option>
+                                </select>
+                                <div class="help-text" id="research-help">How much focus on fact-checking and research
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="writing_schedule">Preferred Writing Schedule</label>
+                                <select id="writing_schedule" name="writing_schedule" aria-describedby="schedule-help">
+                                    <option value="">Select schedule...</option>
+                                </select>
+                                <div class="help-text" id="schedule-help">Your ideal writing routine and timeline</div>
+                            </div>
+
+                            <div class="form-group form-group-wide">
+                                <label for="additional_notes">Additional Notes</label>
+                                <textarea id="additional_notes" name="additional_notes"
+                                    placeholder="Any specific requirements, preferences, or goals for your book..."
+                                    aria-describedby="notes-help"></textarea>
+                                <div class="help-text" id="notes-help">Share any special considerations or creative
+                                    vision</div>
+                            </div>
+                        </div>
+                    </form>
                 </div>
             </div>
 
-            <div id="validation-warnings"></div>
+            <!-- Enhanced validation warnings -->
+            <div id="validation-warnings" class="validation-container" aria-live="polite"></div>
 
-            <div class="navigation">
-                <button type="button" class="btn btn-secondary" id="prev-btn" style="display: none;">Previous</button>
-                <button type="button" class="btn btn-primary" id="next-btn">Next</button>
-                <button type="button" class="btn btn-success" id="submit-btn" style="display: none;">Create My Book
-                    Plan</button>
+            <!-- Enhanced navigation -->
+            <nav class="navigation" aria-label="Wizard navigation">
+                <button type="button" class="btn btn-secondary" id="prev-btn" style="display: none;">
+                    <span class="btn-icon">←</span>
+                    Previous
+                </button>
+
+                <div class="navigation-progress">
+                    <span class="progress-text">Step <span id="current-step-number">1</span> of 6</span>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                </div>
+
+                <button type="button" class="btn btn-primary" id="next-btn">
+                    Next
+                    <span class="btn-icon">→</span>
+                </button>
+
+                <button type="button" class="btn btn-success" id="submit-btn" style="display: none;">
+                    <span class="btn-icon">✨</span>
+                    Create My Book Plan
+                </button>
+            </nav>
+        </main>
+
+        <!-- Enhanced loading state -->
+        <div class="loading" id="loading" role="status" aria-live="polite">
+            <div class="loading-content">
+                <div class="spinner" aria-hidden="true"></div>
+                <h3>Creating your personalized book plan...</h3>
+                <p>Our AI agents are analyzing your preferences and crafting a comprehensive writing strategy tailored
+                    to your vision.</p>
+                <div class="loading-steps">
+                    <div class="loading-step active">
+                        <span class="step-dot"></span>
+                        Analyzing your parameters
+                    </div>
+                    <div class="loading-step">
+                        <span class="step-dot"></span>
+                        Structuring your narrative
+                    </div>
+                    <div class="loading-step">
+                        <span class="step-dot"></span>
+                        Preparing writing tools
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <h3>Creating your book plan...</h3>
-            <p>Our AI agents are analyzing your preferences and creating a personalized writing plan.</p>
-        </div>
-
-        <div class="success-message" id="success">
-            <h2>🎉 Book Plan Created Successfully!</h2>
-            <p>Your personalized book planning session is ready. Redirecting to your writing dashboard...</p>
+        <!-- Enhanced success message -->
+        <div class="success-message" id="success" role="status" aria-live="polite">
+            <div class="success-content">
+                <div class="success-icon">🎉</div>
+                <h2>Book Plan Created Successfully!</h2>
+                <p>Your personalized writing blueprint is ready. Our AI agents have crafted a comprehensive strategy
+                    based on your unique vision.</p>
+                <div class="success-features">
+                    <div class="feature-item">
+                        <span class="feature-icon">📖</span>
+                        <span>Custom chapter outline</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">👥</span>
+                        <span>Character development guide</span>
+                    </div>
+                    <div class="feature-item">
+                        <span class="feature-icon">🔍</span>
+                        <span>Research recommendations</span>
+                    </div>
+                </div>
+                <p class="redirect-notice">Redirecting to your writing dashboard...</p>
+            </div>
         </div>
     </div>
 
+    <!-- Enhanced script loading -->
     <script src="script.js"></script>
 </body>
 

@@ -851,6 +851,26 @@ class BookPlannerWizard {
             }
         });
 
+        // *** ADD THESE NEW LINES TO UPDATE THE NAVIGATION COUNTER ***
+
+        // Update the step counter text "Step X of 6"
+        const currentStepNumber = document.getElementById('current-step-number');
+        if (currentStepNumber) {
+            currentStepNumber.textContent = this.currentStep;
+        }
+
+        // Update the progress bar fill width
+        const progressFill = document.getElementById('progress-fill');
+        if (progressFill) {
+            const progressPercentage = (this.currentStep / this.maxSteps) * 100;
+            progressFill.style.width = `${progressPercentage}%`;
+
+            // Also update the data-step attribute for CSS targeting if needed
+            progressFill.setAttribute('data-step', this.currentStep);
+        }
+
+        // *** END OF NEW LINES ***
+
         // Update navigation buttons
         const prevBtn = document.getElementById('prev-btn');
         const nextBtn = document.getElementById('next-btn');
