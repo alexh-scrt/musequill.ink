@@ -69,6 +69,7 @@ from musequill.routers.planning import planning_router
 from musequill.core.openai_client.client import OpenAIClient
 from musequill.config.logging import get_logger
 from musequill.database.book import books_db
+from musequill.agents.integration import start_book_planning as agent_start_book_planning
 
 # Get logger and test
 logger = get_logger("test_logger")
@@ -220,7 +221,6 @@ async def start_book_planning_with_error_handling(
     """
     Wrapper for start_book_planning with comprehensive error handling.
     """
-    
     max_retries = 2
     retry_count = 0
     
@@ -229,19 +229,34 @@ async def start_book_planning_with_error_handling(
             # Call the actual planning function
             result = await start_book_planning(book_id, request)
             
+            # Add null checking
+            if result is None:
+                raise ValueError("Planning function returned None - check function implementation")
+            
+            if not isinstance(result, dict):
+                raise ValueError(f"Planning function returned {type(result)}, expected dict")
+            
+            # Check for success indicator
+            success = result.get("success", False)
+            if not success:
+                error_msg = result.get("error", "Unknown planning error")
+                raise ValueError(f"Planning failed: {error_msg}")
+            
             # Update book with success
             if book_id in books_db:
                 books_db[book_id].update({
                     "planning_completed": True,
                     "retry_count": retry_count,
-                    "last_attempt": datetime.now()
+                    "last_attempt": datetime.now(),
+                    "planning_results": result.get("planning_result"),
+                    "agent_id": result.get("agent_id")
                 })
             
             logger.info(
                 "Book planning completed successfully",
                 book_id=str(book_id),
                 retry_count=retry_count,
-                success=result.get("success", False)
+                success=success
             )
             return
             
@@ -287,7 +302,6 @@ async def start_book_planning_with_error_handling(
                     ]
                 })
                 break
-
 
 async def update_book_status_in_db(
     book_id: UUID,
@@ -347,7 +361,7 @@ def determine_next_steps(request: BookCreationRequest) -> List[str]:
 
 
 
-async def start_book_planning(book_id: UUID, request: BookCreationRequest):
+async def start_book_planning2(book_id: UUID, request: BookCreationRequest):
     """Background task to start the AI book planning process."""
     # This is where we would integrate with our AI agents
     # For now, just simulate the planning process
@@ -363,3 +377,36 @@ async def start_book_planning(book_id: UUID, request: BookCreationRequest):
         books_db[book_id]["status"] = "ai_planning"
         books_db[book_id]["planning_started_at"] = datetime.now()
 
+async def start_book_planning(book_id: UUID, request: BookCreationRequest) -> Dict[str, Any]:
+    """
+    Main book planning function.
+    """
+    try:
+        
+        # Call the agent integration function
+        result = await agent_start_book_planning(book_id, request)
+        
+        # Ensure we always return a dictionary
+        if result is None:
+            return {
+                "success": False,
+                "error": "Planning function returned None",
+                "book_id": str(book_id)
+            }
+        
+        return result
+        
+    except ImportError as e:
+        logger.error("Failed to import planning function", error=str(e))
+        return {
+            "success": False,
+            "error": f"Import error: {str(e)}",
+            "book_id": str(book_id)
+        }
+    except Exception as e:
+        logger.error("Planning function failed", book_id=str(book_id), error=str(e))
+        return {
+            "success": False,
+            "error": str(e),
+            "book_id": str(book_id)
+        }

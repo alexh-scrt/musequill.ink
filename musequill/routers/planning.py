@@ -32,14 +32,13 @@ async def get_openai_client() -> OpenAIClient:
     return OpenAIClient()
 
 
-async def get_factory(openai_client: OpenAIClient = Depends(get_openai_client)) -> AgentFactory:
+def get_factory_dependency(openai_client: OpenAIClient = Depends(get_openai_client)) -> AgentFactory:
     """Dependency to get agent factory."""
     return get_agent_factory(openai_client)
 
-
 async def get_planning_agent(
     agent_id: Optional[str] = None,
-    factory: AgentFactory = Depends(get_factory)
+    factory: AgentFactory = Depends(get_factory_dependency)
 ):
     """Dependency to get or create a planning agent."""
     try:
@@ -293,7 +292,7 @@ async def create_quick_plan(
 # ============================================================================
 
 @planning_router.get("/agents", response_model=List[Dict[str, Any]])
-async def list_planning_agents(factory: AgentFactory = Depends(get_factory)):
+async def list_planning_agents(factory: AgentFactory = Depends(get_factory_dependency)):
     """List all active planning agents."""
     try:
         all_agents = await factory.list_agents()
@@ -314,7 +313,7 @@ async def list_planning_agents(factory: AgentFactory = Depends(get_factory)):
 @planning_router.get("/agents/{agent_id}/status", response_model=PlanningStatusResponse)
 async def get_planning_agent_status(
     agent_id: str,
-    factory: AgentFactory = Depends(get_factory)
+    factory: AgentFactory = Depends(get_factory_dependency)
 ):
     """Get detailed status of a specific planning agent."""
     try:
@@ -347,7 +346,7 @@ async def get_planning_agent_status(
 @planning_router.post("/agents/{agent_id}/restart")
 async def restart_planning_agent(
     agent_id: str,
-    factory: AgentFactory = Depends(get_factory)
+    factory: AgentFactory = Depends(get_factory_dependency)
 ):
     """Restart a planning agent."""
     try:
@@ -375,7 +374,7 @@ async def restart_planning_agent(
 @planning_router.delete("/agents/{agent_id}")
 async def remove_planning_agent(
     agent_id: str,
-    factory: AgentFactory = Depends(get_factory)
+    factory: AgentFactory = Depends(get_factory_dependency)
 ):
     """Remove a planning agent."""
     try:
@@ -405,7 +404,7 @@ async def remove_planning_agent(
 async def get_story_plan(
     story_id: str,
     agent_id: Optional[str] = None,
-    factory: AgentFactory = Depends(get_factory)
+    factory: AgentFactory = Depends(get_factory_dependency)
 ):
     """Get a stored story plan by ID."""
     try:
@@ -452,7 +451,7 @@ async def refine_story_plan(
     story_id: str,
     improvements: List[str],
     agent_id: Optional[str] = None,
-    factory: AgentFactory = Depends(get_factory)
+    factory: AgentFactory = Depends(get_factory_dependency)
 ):
     """Refine an existing story plan based on feedback."""
     try:
@@ -569,7 +568,7 @@ async def validate_story_plan(
 # ============================================================================
 
 @planning_router.post("/test-connection")
-async def test_planning_connection(factory: AgentFactory = Depends(get_factory)):
+async def test_planning_connection(factory: AgentFactory = Depends(get_factory_dependency)):
     """Test the planning system connection and functionality."""
     try:
         # Test agent creation
@@ -619,7 +618,7 @@ async def test_planning_connection(factory: AgentFactory = Depends(get_factory))
 
 
 @planning_router.get("/metrics")
-async def get_planning_metrics(factory: AgentFactory = Depends(get_factory)):
+async def get_planning_metrics(factory: AgentFactory = Depends(get_factory_dependency)):
     """Get planning system metrics and statistics."""
     try:
         # Get agent factory stats
@@ -670,7 +669,7 @@ async def create_multiple_outlines(
     requests: List[PlanningRequest],
     background_tasks: BackgroundTasks,
     max_concurrent: int = Query(default=3, le=10),
-    factory: AgentFactory = Depends(get_factory)
+    factory: AgentFactory = Depends(get_factory_dependency)
 ):
     """Create multiple story outlines concurrently."""
     try:
@@ -737,7 +736,7 @@ async def create_multiple_outlines(
 # ============================================================================
 
 @planning_router.get("/health")
-async def planning_health_check(factory: AgentFactory = Depends(get_factory)):
+async def planning_health_check(factory: AgentFactory = Depends(get_factory_dependency)):
     """Health check specifically for planning system."""
     try:
         health = await factory.health_check()

@@ -23,13 +23,6 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
     """
     Background task to start the AI book planning process.
     This integrates with the existing API endpoint.
-    
-    Args:
-        book_id: The UUID of the book to plan
-        request: BookCreationRequest from the API endpoint
-    
-    Returns:
-        Dict containing planning results and status
     """
     
     planning_result = None
@@ -39,11 +32,13 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
         logger.info(
             "Starting AI book planning",
             book_id=str(book_id),
-            title=request.title,
-            genre=request.genre.value,
-            length=request.length.value,
-            ai_assistance_level=request.ai_assistance_level.value
+            title=getattr(request, 'title', 'Unknown'),
+            genre=getattr(request, 'genre', {}).get('value', 'Unknown') if hasattr(request, 'genre') else 'Unknown'
         )
+        
+        # Check if request has required attributes
+        if not hasattr(request, 'title'):
+            raise ValueError("Request missing required 'title' attribute")
         
         # Update book status to indicate planning has started
         await update_book_status(book_id, "ai_planning_started", {
@@ -56,11 +51,19 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
         openai_client = OpenAIClient()
         factory = get_agent_factory(openai_client)
         
+        # Validate factory
+        if factory is None:
+            raise ValueError("Failed to get agent factory")
+        
         # Create or get planning agent
         planning_agent = await factory.get_or_create_agent(
             AgentType.PLANNING,
             agent_id=f"planning_{book_id}"
         )
+        
+        # Validate agent
+        if planning_agent is None:
+            raise ValueError("Failed to create planning agent")
         
         logger.info(
             "Planning agent ready",
@@ -77,6 +80,10 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
         # Create the book plan using the planning agent
         planning_result = await planning_agent.create_book_plan_from_request(request)
         
+        # Validate planning result
+        if planning_result is None:
+            raise ValueError("Planning agent returned None result")
+        
         # Process and store the planning results
         processed_results = await process_planning_results(book_id, planning_result, request)
         
@@ -85,21 +92,16 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
             "planning_completed_at": datetime.now(),
             "agent_id": planning_agent.agent_id,
             "planning_results": processed_results,
-            "status_message": f"Planning completed successfully! Created {len(planning_result.chapters)} chapters.",
-            "next_steps": planning_result.next_steps
+            "status_message": f"Planning completed successfully! Created {len(getattr(planning_result, 'chapters', []))} chapters.",
+            "next_steps": getattr(planning_result, 'next_steps', [])
         })
         
         logger.info(
             "Book planning completed successfully",
             book_id=str(book_id),
-            chapters_created=len(planning_result.chapters),
-            research_requirements=len(planning_result.research_requirements.requirements),
-            confidence=planning_result.planning_confidence
+            chapters_created=len(getattr(planning_result, 'chapters', [])),
+            agent_id=planning_agent.agent_id
         )
-        
-        # Optionally start next phase (e.g., research or writing)
-        if should_start_next_phase(request):
-            await schedule_next_phase(book_id, planning_result, request)
         
         return {
             "success": True,
@@ -119,11 +121,14 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
         )
         
         # Update book status with error
-        await update_book_status(book_id, "planning_failed", {
-            "planning_failed_at": datetime.now(),
-            "error_message": error_message,
-            "status_message": f"Planning failed: {error_message}"
-        })
+        try:
+            await update_book_status(book_id, "planning_failed", {
+                "planning_failed_at": datetime.now(),
+                "error_message": error_message,
+                "status_message": f"Planning failed: {error_message}"
+            })
+        except Exception as status_error:
+            logger.error("Failed to update book status", error=str(status_error))
         
         return {
             "success": False,
@@ -135,13 +140,11 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
     finally:
         # Cleanup resources if needed
         try:
-            if 'openai_client' in locals():
+            if 'openai_client' in locals() and openai_client:
                 # Note: Don't close the client if it's shared
-                # await openai_client.close()
                 pass
         except Exception as cleanup_error:
             logger.warning("Cleanup warning", error=str(cleanup_error))
-
 
 async def process_planning_results(
     book_id: UUID, 

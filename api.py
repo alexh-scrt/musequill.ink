@@ -64,7 +64,7 @@ from musequill.models.subgenre import (
     get_subgenres_for_frontend,
     validate_book_genre_subgenre
 )
-from musequill.agents.factory import AgentFactory
+from musequill.agents.factory import AgentFactory, get_agent_factory
 from musequill.routers.planning import planning_router
 from musequill.core.openai_client.client import OpenAIClient
 from musequill.config.settings import Settings
@@ -91,7 +91,7 @@ settings.LOG_FILE_PATH = None  # No file logging for test
 setup_logging(settings)
 
 # Get logger and test
-logger = get_logger("test_logger")
+logger = get_logger(__name__)
 
 # Dependency injection for agent system
 async def get_openai_client() -> OpenAIClient:
@@ -147,13 +147,11 @@ static_dir.mkdir(exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-async def get_agent_factory(
+def get_agent_factory_dependency(
     openai_client: OpenAIClient = Depends(get_openai_client)
 ) -> AgentFactory:
     """Get agent factory instance."""
     return get_agent_factory(openai_client)
-
-
 
 # Enhanced exception handlers
 @app.exception_handler(RequestValidationError)
@@ -519,7 +517,7 @@ def get_common_structures_for_genre(genre: str) -> List[str]:
 async def create_book(
     request: BookCreationRequest,
     background_tasks: BackgroundTasks,
-    factory: AgentFactory = Depends(get_agent_factory)
+    factory: AgentFactory = Depends(get_agent_factory_dependency)
 ) -> BookCreationResponse:
     """Create a new book plan based on user parameters with AI agent planning."""
     
@@ -755,7 +753,7 @@ async def get_book_planning_details(book_id: UUID) -> Dict[str, Any]:
 async def retry_book_planning(
     book_id: UUID,
     background_tasks: BackgroundTasks,
-    factory: AgentFactory = Depends(get_agent_factory)
+    factory: AgentFactory = Depends(get_agent_factory_dependency)
 ) -> Dict[str, Any]:
     """Retry planning for a failed book."""
     
@@ -808,7 +806,7 @@ async def retry_book_planning(
 
 @app.get("/api/agents/status")
 async def get_agents_status(
-    factory: AgentFactory = Depends(get_agent_factory)
+    factory: AgentFactory = Depends(get_agent_factory_dependency)
 ) -> Dict[str, Any]:
     """Get status of all agents in the factory."""
     
@@ -833,7 +831,7 @@ async def get_agents_status(
 
 @app.post("/api/agents/cleanup")
 async def cleanup_agents(
-    factory: AgentFactory = Depends(get_agent_factory)
+    factory: AgentFactory = Depends(get_agent_factory_dependency)
 ) -> Dict[str, Any]:
     """Cleanup all agents (admin endpoint)."""
     
@@ -855,7 +853,7 @@ async def cleanup_agents(
 
 @app.get("/api/health")
 async def health_check(
-    factory: AgentFactory = Depends(get_agent_factory)
+    factory: AgentFactory = Depends(get_agent_factory_dependency)
 ) -> Dict[str, Any]:
     """Enhanced health check including agent system."""
     
