@@ -1,0 +1,26 @@
+# MuseQuill.ink - AI/ML Dependencies
+# LangChain, vector stores, and AI-specific libraries
+
+# Base requirements
+-r requirements-base.txt
+
+# LangChain Ecosystem
+langchain>=0.1.10
+langchain-openai>=0.0.8
+langchain-community>=0.0.24
+langgraph>=0.0.20
+langsmith>=0.1.0
+
+# Vector Stores and Embeddings
+pinecone-client>=3.0.0
+chromadb>=0.4.22
+qdrant-client>=1.7.0
+faiss-cpu>=1.7.4
+
+# Knowledge Graph
+neo4j>=5.17.0
+networkx>=3.2.1
+
+# Research APIs
+tavily-python>=0.3.0
+beautifulsoup4>=4.12.0

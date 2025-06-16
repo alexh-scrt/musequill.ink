@@ -72,7 +72,7 @@ class PlanningAgent(BaseAgent):
                 "original_title": book_creation_request.title,
                 "subtitle": book_creation_request.subtitle,
                 "genre": book_creation_request.genre.value,
-                "sub_genre": book_creation_request.sub_genre.value if book_creation_request.sub_genre else None,
+                "sub_genre": book_creation_request.sub_genre,
                 "length": book_creation_request.length.value,
                 "structure": book_creation_request.structure.value,
                 "pov": book_creation_request.pov.value,

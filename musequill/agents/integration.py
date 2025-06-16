@@ -13,6 +13,7 @@ from musequill.core.openai_client import OpenAIClient
 from musequill.agents.factory import get_agent_factory, AgentFactory
 from musequill.core.base.agent import AgentType
 from musequill.agents.planning import PlanningAgent
+from musequill.models.presets import GenreType
 
 logger = structlog.get_logger(__name__)
 
@@ -29,11 +30,12 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
     error_message = None
     
     try:
+        genre:Optional[GenreType] = getattr(request, 'genre', None)
         logger.info(
             "Starting AI book planning",
             book_id=str(book_id),
             title=getattr(request, 'title', 'Unknown'),
-            genre=getattr(request, 'genre', {}).get('value', 'Unknown') if hasattr(request, 'genre') else 'Unknown'
+            genre=genre.value if genre else 'Unknown'
         )
         
         # Check if request has required attributes

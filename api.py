@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 import bootstrap
 from musequill.models.presets import (
     GenreType,
-    SubGenre,
+#    SubGenre,
     BookLength,
     StoryStructure,
     PlotType,
@@ -45,7 +45,7 @@ from musequill.models.presets import (
     ResearchPriority,
     WritingSchedule,
     get_genre_recommendations,
-    get_enum_with_metadata,
+#    get_enum_with_metadata,
     validate_enum_combination,
     get_default_values
 )
@@ -56,7 +56,7 @@ from musequill.api.model import (
     EnumChoice,
     EnumData,
     GenreSubgenreValidationRequest,
-    validate_book_genre_subgenre
+#    validate_book_genre_subgenre
 )
 from musequill.models.subgenre import (
     SubGenreRegistry, 
@@ -79,6 +79,7 @@ from musequill.workers.planning import (
     start_book_planning_with_error_handling,
     update_book_status_in_db
 )
+from musequill.models.word_count import WORD_COUNT_MAPPING
         
 # Create settings
 settings = Settings()
@@ -545,24 +546,8 @@ async def create_book(
             ai_assistance=request.ai_assistance_level.value
         )
         
-        # Calculate estimated metrics based on length
-        word_count_mapping = {
-            BookLength.FLASH_FICTION: 500,
-            BookLength.SHORT_STORY: 4000,
-            BookLength.NOVELETTE: 12500,
-            BookLength.NOVELLA: 30000,
-            BookLength.SHORT_NOVEL: 50000,
-            BookLength.STANDARD_NOVEL: 75000,
-            BookLength.LONG_NOVEL: 105000,
-            BookLength.EPIC_NOVEL: 150000,
-            BookLength.ARTICLE: 1250,
-            BookLength.ESSAY: 3000,
-            BookLength.GUIDE: 10000,
-            BookLength.MANUAL: 32500,
-            BookLength.COMPREHENSIVE_BOOK: 100000
-        }
-        
-        estimated_word_count = word_count_mapping.get(request.length, 75000)
+        default_word_count:int = WORD_COUNT_MAPPING.get(BookLength.NOVELLA)
+        estimated_word_count = WORD_COUNT_MAPPING.get(request.length, default_word_count)
         estimated_chapters = max(1, estimated_word_count // 3000)  # ~3000 words per chapter
         
         # Validate enum combinations
@@ -644,7 +629,7 @@ async def create_book(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to create book: {str(e)}"
-        )
+        ) from e
 
 @app.get("/api/books/{book_id}", response_model=BookStatusResponse)
 async def get_book(book_id: UUID) -> BookStatusResponse:

@@ -1,0 +1,88 @@
+# MuseQuill.ink Dependencies
+# AI-powered book writing system using LangGraph orchestration and OpenAI models
+
+# Core Framework
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+
+# OpenAI Integration
+openai>=1.12.0
+tiktoken>=0.6.0
+
+# LangChain Ecosystem
+langchain>=0.1.10
+langchain-openai>=0.0.8
+langchain-community>=0.0.24
+langgraph>=0.0.20
+langsmith>=0.1.0
+
+# Vector Stores and Embeddings
+pinecone-client>=3.0.0
+chromadb>=0.4.22
+qdrant-client>=1.7.0
+faiss-cpu>=1.7.4
+
+# Knowledge Graph
+neo4j>=5.17.0
+networkx>=3.2.1
+
+# Caching and Storage
+redis>=5.0.1
+boto3>=1.34.0
+aiofiles>=23.2.0
+
+# Research APIs
+tavily-python>=0.3.0
+requests>=2.31.0
+aiohttp>=3.9.0
+beautifulsoup4>=4.12.0
+
+# Database
+sqlalchemy[asyncio]>=2.0.25
+alembic>=1.13.0
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.9
+
+# Authentication and Security
+python-multipart>=0.0.9
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# Utilities and CLI
+structlog>=23.2.0
+rich>=13.7.0
+typer>=0.9.0
+httpx>=0.26.0
+python-dotenv>=1.0.0
+dynaconf>=3.2.0
+
+# Async Support
+asyncio-mqtt>=0.16.0
+websockets>=12.0
+
+# Development Dependencies (Optional)
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.0.0
+pytest-mock>=3.12.0
+respx>=0.20.0
+black>=24.0.0
+isort>=5.13.0
+mypy>=1.8.0
+ruff>=0.2.0
+pre-commit>=3.6.0
+
+# Documentation (Optional)
+mkdocs>=1.5.0
+mkdocs-material>=9.5.0
+mkdocs-mermaid2-plugin>=1.1.0
+mkdocstrings[python]>=0.24.0
+
+# Testing Utilities (Optional)
+factory-boy>=3.3.0
+faker>=22.0.0
+
+# Production Deployment (Optional)
+gunicorn>=21.2.0
