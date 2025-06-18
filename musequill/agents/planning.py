@@ -10,10 +10,11 @@ import structlog
 
 from musequill.core.base.agent import BaseAgent, AgentConfig, AgentType, AgentState
 from musequill.core.openai_client import OpenAIClient
+from musequill.models.presets import GenreType, get_genre_mapping
 from musequill.models.planning import (
     PlanningRequest, PlanningResult, StoryOutline, ChapterPlan,
     ResearchRequirements, ResearchRequirement, ResearchPriority,
-    PlotStructure, StoryStructure, GenreType
+    PlotStructure, StoryStructure
 )
 from musequill.prompts.planning import (
     PLANNING_SYSTEM_PROMPT, STRUCTURE_ANALYSIS_PROMPT,
@@ -132,31 +133,33 @@ class PlanningAgent(BaseAgent):
         description = "\n".join(description_parts)
         
         # Map genre to GenreType
-        genre_mapping = {
-            "FICTION": GenreType.FICTION,
-            "FANTASY": GenreType.FANTASY,
-            "SCIENCE_FICTION": GenreType.SCIENCE_FICTION,
-            "MYSTERY": GenreType.MYSTERY,
-            "ROMANCE": GenreType.ROMANCE,
-            "THRILLER": GenreType.THRILLER,
-            "HORROR": GenreType.HORROR,
-            "NON_FICTION": GenreType.NON_FICTION,
-            "BUSINESS": GenreType.BUSINESS,
-            "SELF_HELP": GenreType.SELF_HELP,
-            "BIOGRAPHY": GenreType.BIOGRAPHY,
-            "HISTORY": GenreType.HISTORY,
-            "SCIENCE": GenreType.SCIENCE,
-            "TECHNOLOGY": GenreType.TECHNOLOGY,
-            "HEALTH": GenreType.HEALTH,
-            "TRAVEL": GenreType.TRAVEL,
-            "COOKING": GenreType.COOKING,
-            "CHILDREN": GenreType.CHILDREN,
-            "YOUNG_ADULT": GenreType.YOUNG_ADULT,
-            "POETRY": GenreType.POETRY,
-            "DRAMA": GenreType.DRAMA,
-            "ACADEMIC": GenreType.ACADEMIC,
-        }
+        # genre_mapping = {
+        #     "FICTION": GenreType.FICTION,
+        #     "FANTASY": GenreType.FANTASY,
+        #     "SCIENCE_FICTION": GenreType.SCIENCE_FICTION,
+        #     "MYSTERY": GenreType.MYSTERY,
+        #     "ROMANCE": GenreType.ROMANCE,
+        #     "THRILLER": GenreType.THRILLER,
+        #     "HORROR": GenreType.HORROR,
+        #     "NON_FICTION": GenreType.NON_FICTION,
+        #     "BUSINESS": GenreType.BUSINESS,
+        #     "SELF_HELP": GenreType.SELF_HELP,
+        #     "BIOGRAPHY": GenreType.BIOGRAPHY,
+        #     "HISTORY": GenreType.HISTORY,
+        #     "SCIENCE": GenreType.SCIENCE,
+        #     "TECHNOLOGY": GenreType.TECHNOLOGY,
+        #     "HEALTH": GenreType.HEALTH,
+        #     "TRAVEL": GenreType.TRAVEL,
+        #     "COOKING": GenreType.COOKING,
+        #     "CHILDREN": GenreType.CHILDREN,
+        #     "YOUNG_ADULT": GenreType.YOUNG_ADULT,
+        #     "POETRY": GenreType.POETRY,
+        #     "DRAMA": GenreType.DRAMA,
+        #     "ACADEMIC": GenreType.ACADEMIC,
+        # }
         
+        genre_mapping:Dict[str, GenreType] = get_genre_mapping()
+
         genre = genre_mapping.get(book_request.genre.name, GenreType.OTHER)
         
         # Calculate target length based on BookLength enum

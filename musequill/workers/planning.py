@@ -68,7 +68,7 @@ from musequill.agents.factory import AgentFactory
 from musequill.routers.planning import planning_router
 from musequill.core.openai_client.client import OpenAIClient
 from musequill.config.logging import get_logger
-from musequill.database.book import books_db
+from musequill.database import book as book_db
 from musequill.agents.integration import start_book_planning as agent_start_book_planning
 
 # Get logger and test
@@ -243,8 +243,8 @@ async def start_book_planning_with_error_handling(
                 raise ValueError(f"Planning failed: {error_msg}")
             
             # Update book with success
-            if book_id in books_db:
-                books_db[book_id].update({
+            if book_db.book_exists(book_id):
+                book_db.update_book(book_id, {
                     "planning_completed": True,
                     "retry_count": retry_count,
                     "last_attempt": datetime.now(),
@@ -273,8 +273,8 @@ async def start_book_planning_with_error_handling(
             )
             
             # Update book with retry information
-            if book_id in books_db:
-                books_db[book_id].update({
+            if book_db.book_exists(book_id):
+                book_db.update_book(book_id, {
                     "retry_count": retry_count,
                     "last_error": error_msg,
                     "last_attempt": datetime.now()
@@ -310,12 +310,9 @@ async def update_book_status_in_db(
 ) -> None:
     """Update book status in database."""
     try:
-        if book_id in books_db:
-            books_db[book_id]["status"] = status
-            books_db[book_id]["updated_at"] = datetime.now()
-            
+        if book_db.book_exists(book_id):
             if additional_data:
-                books_db[book_id].update(additional_data)
+                book_db.update_book_status(book_id, status, additional_data)            
                 
     except Exception as e:
         logger.error("Failed to update book status", book_id=str(book_id), error=str(e))
@@ -359,23 +356,6 @@ def determine_next_steps(request: BookCreationRequest) -> List[str]:
     
     return steps
 
-
-
-async def start_book_planning2(book_id: UUID, request: BookCreationRequest):
-    """Background task to start the AI book planning process."""
-    # This is where we would integrate with our AI agents
-    # For now, just simulate the planning process
-    
-    print(f"Starting AI planning for book {book_id}")
-    print(f"Title: {request.title}")
-    print(f"Genre: {request.genre}")
-    print(f"Structure: {request.structure}")
-    print(f"AI Assistance Level: {request.ai_assistance_level}")
-    
-    # Update book status
-    if book_id in books_db:
-        books_db[book_id]["status"] = "ai_planning"
-        books_db[book_id]["planning_started_at"] = datetime.now()
 
 async def start_book_planning(book_id: UUID, request: BookCreationRequest) -> Dict[str, Any]:
     """

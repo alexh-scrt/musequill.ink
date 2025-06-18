@@ -2,7 +2,6 @@
 Book Planner Backend API - Enhanced Version
 FastAPI server providing enum data and book creation endpoints with proper metadata
 """
-import sys
 import time
 import logging
 import traceback
@@ -10,6 +9,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from uuid import UUID, uuid4
 from pathlib import Path
+import uvicorn
+import argparse
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.exceptions import RequestValidationError
@@ -69,7 +70,6 @@ from musequill.routers.planning import planning_router
 from musequill.core.openai_client.client import OpenAIClient
 from musequill.config.settings import Settings
 from musequill.config.logging import setup_logging, get_logger
-from musequill.database.book import books_db
 from musequill.workers.planning import (
     enum_to_choices,
     get_enum_metadata,
@@ -79,25 +79,18 @@ from musequill.workers.planning import (
     start_book_planning_with_error_handling,
     update_book_status_in_db
 )
+from musequill.models.genre import (
+    get_common_structures_for_genre,
+    get_typical_length_for_genre
+)
 from musequill.models.word_count import WORD_COUNT_MAPPING
-        
-# Create settings
-settings = Settings()
-settings.LOG_LEVEL = "DEBUG"
-settings.STRUCTURED_LOGGING = True
-settings.LOG_FORMAT = "json"
-settings.LOG_FILE_PATH = None  # No file logging for test
-        
-# Setup logging
-setup_logging(settings)
+from musequill.database import book as book_db
+from musequill.core.openai_client.client import get_openai_client
+from musequill.api.model import book_request_to_book_data
+
 
 # Get logger and test
 logger = get_logger(__name__)
-
-# Dependency injection for agent system
-async def get_openai_client() -> OpenAIClient:
-    """Get OpenAI client instance."""
-    return OpenAIClient()
 
 # FastAPI application
 app = FastAPI(
@@ -481,39 +474,6 @@ async def get_genre_analysis() -> Dict[str, Any]:
     return result
 
 
-def get_typical_length_for_genre(genre: str) -> List[str]:
-    """Get typical book lengths for a genre."""
-    length_mapping = {
-        "children": ["short_story", "novella"],
-        "picture_book": ["flash_fiction", "short_story"],
-        "young_adult": ["short_novel", "standard_novel"],
-        "romance": ["novella", "standard_novel"],
-        "fantasy": ["standard_novel", "long_novel", "epic_novel"],
-        "science_fiction": ["standard_novel", "long_novel"],
-        "mystery": ["novella", "standard_novel"],
-        "thriller": ["standard_novel"],
-        "business": ["guide", "manual"],
-        "self_help": ["guide", "manual"],
-        "memoir": ["standard_novel"],
-        "biography": ["standard_novel", "long_novel"]
-    }
-    return length_mapping.get(genre, ["standard_novel"])
-
-
-def get_common_structures_for_genre(genre: str) -> List[str]:
-    """Get common story structures for a genre."""
-    structure_mapping = {
-        "fantasy": ["hero_journey", "three_act"],
-        "science_fiction": ["three_act", "seven_point"],
-        "mystery": ["three_act", "fichtean_curve"],
-        "romance": ["three_act", "story_circle"],
-        "thriller": ["three_act", "save_the_cat"],
-        "business": ["instructional", "case_study"],
-        "self_help": ["problem_solution", "step_by_step"]
-    }
-    return structure_mapping.get(genre, ["three_act"])
-
-
 @app.post("/api/books/create", response_model=BookCreationResponse)
 async def create_book(
     request: BookCreationRequest,
@@ -546,54 +506,11 @@ async def create_book(
             ai_assistance=request.ai_assistance_level.value
         )
         
-        default_word_count:int = WORD_COUNT_MAPPING.get(BookLength.NOVELLA)
-        estimated_word_count = WORD_COUNT_MAPPING.get(request.length, default_word_count)
-        estimated_chapters = max(1, estimated_word_count // 3000)  # ~3000 words per chapter
-        
-        # Validate enum combinations
-        validation_warnings = validate_enum_combination(request.dict())
-        
-        # Initialize book data with enhanced structure
-        book_data = {
-            "id": book_id,
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-            "parameters": request.dict(),
-            "status": "initializing",
-            "planning_status": "pending",
-            "estimated_word_count": estimated_word_count,
-            "estimated_chapters": estimated_chapters,
-            "completion_percentage": 0.0,
-            "validation_warnings": validation_warnings,
-            "genre_info": {
-                "genre": request.genre.value,
-                "sub_genre": request.sub_genre,
-                "is_fiction": request.genre.is_fiction,
-                "available_subgenres": SubGenreRegistry.get_subgenre_choices(request.genre.value)
-            },
-            "validation_info": {
-                "genre_subgenre_valid": True if not request.sub_genre else validate_book_genre_subgenre(request.genre.value, request.sub_genre)['valid'],
-                "warnings": validate_enum_combination(request.dict())
-            },         
-            # Agent-related fields
-            "agent_id": None,
-            "planning_results": None,
-            "status_message": "Book created, preparing for AI analysis...",
-            "next_steps": [
-                "AI agents are analyzing your requirements",
-                "Story outline will be created",
-                "Chapter structure will be planned",
-                "Research requirements will be identified"
-            ],
-            
-            # Error tracking
-            "error_message": None,
-            "retry_count": 0
-        }
+        book_data = book_request_to_book_data(request, book_id)
         
         # Store book data
-        books_db[book_id] = book_data
-        
+        book_db.create_book(book_data)
+
         # Determine next steps based on AI assistance level
         next_steps = determine_next_steps(request)
         
@@ -608,8 +525,8 @@ async def create_book(
         logger.info(
             "Book created successfully, starting AI planning",
             book_id=str(book_id),
-            estimated_word_count=estimated_word_count,
-            estimated_chapters=estimated_chapters
+            estimated_word_count=book_data.get('estimated_word_count', 0),
+            estimated_chapters=book_data.get('estimated_chapters', 0)
         )
         
         return BookCreationResponse(
@@ -617,8 +534,8 @@ async def create_book(
             title=request.title,
             status="created",
             message="Book plan created successfully. AI agents are now analyzing your requirements.",
-            estimated_word_count=estimated_word_count,
-            estimated_chapters=estimated_chapters,
+            estimated_word_count=book_data.get('estimated_word_count', 0),
+            estimated_chapters=book_data.get('estimated_chapters', 0),
             created_at=datetime.now(),
             planning_status="starting",
             next_steps=next_steps
@@ -636,10 +553,10 @@ async def get_book(book_id: UUID) -> BookStatusResponse:
     """Get book details and current status."""
     
     try:
-        if book_id not in books_db:
-            raise HTTPException(status_code=404, detail="Book not found")
+        if not book_db.book_exists(book_id):
+            raise HTTPException(status_code=404, detail=f"Book {book_id} not found")
         
-        book_data = books_db[book_id]
+        book_data:Dict = book_db.get_book(book_id)
         
         return BookStatusResponse(
             book_id=book_id,
@@ -664,33 +581,34 @@ async def get_book(book_id: UUID) -> BookStatusResponse:
         logger.error("Failed to get book", book_id=str(book_id), error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/books", response_model=List[BookStatusResponse])
 async def list_books() -> List[BookStatusResponse]:
     """List all books with their current status."""
     
     try:
-        books = []
-        for book_id, book_data in books_db.items():
+        books: List[Dict[str, Any]] = book_db.list_books()
+        for book, in books:
             try:
                 book_response = BookStatusResponse(
-                    book_id=book_id,
-                    title=book_data["parameters"]["title"],
-                    status=book_data["status"],
-                    created_at=book_data["created_at"],
-                    updated_at=book_data.get("updated_at"),
-                    planning_status=book_data.get("planning_status"),
-                    agent_id=book_data.get("agent_id"),
-                    planning_results=book_data.get("planning_results"),
-                    estimated_word_count=book_data["estimated_word_count"],
-                    estimated_chapters=book_data["estimated_chapters"],
-                    completion_percentage=book_data.get("completion_percentage", 0.0),
-                    status_message=book_data.get("status_message"),
-                    next_steps=book_data.get("next_steps", []),
-                    error_message=book_data.get("error_message")
+                    book_id=book['book_id'],
+                    title=book["parameters"]["title"],
+                    status=book["status"],
+                    created_at=book["created_at"],
+                    updated_at=book.get("updated_at"),
+                    planning_status=book.get("planning_status"),
+                    agent_id=book.get("agent_id"),
+                    planning_results=book.get("planning_results"),
+                    estimated_word_count=book["estimated_word_count"],
+                    estimated_chapters=book["estimated_chapters"],
+                    completion_percentage=book.get("completion_percentage", 0.0),
+                    status_message=book.get("status_message"),
+                    next_steps=book.get("next_steps", []),
+                    error_message=book.get("error_message")
                 )
                 books.append(book_response)
             except Exception as e:
-                logger.warning("Failed to process book in list", book_id=str(book_id), error=str(e))
+                logger.warning("Failed to process book in list", book_id=str(book['book_id']), error=str(e))
                 continue
         
         return books
@@ -705,10 +623,10 @@ async def get_book_planning_details(book_id: UUID) -> Dict[str, Any]:
     """Get detailed planning information for a book."""
     
     try:
-        if book_id not in books_db:
-            raise HTTPException(status_code=404, detail="Book not found")
+        if not book_db.book_exists(book_id):
+            raise HTTPException(status_code=404, detail=f"Book with id:{book_id} not found")
         
-        book_data = books_db[book_id]
+        book_data = book_db.get_book(book_id)
         planning_results = book_data.get("planning_results")
         
         if not planning_results:
@@ -743,10 +661,10 @@ async def retry_book_planning(
     """Retry planning for a failed book."""
     
     try:
-        if book_id not in books_db:
+        if not book_db.book_exists(book_id):
             raise HTTPException(status_code=404, detail="Book not found")
         
-        book_data = books_db[book_id]
+        book_data:Dict = book_db.get_book(book_id)
         
         # Check if retry is appropriate
         current_status = book_data["status"]
@@ -845,7 +763,7 @@ async def health_check(
     try:
         # Get agent system health
         agent_health = await factory.health_check()
-        
+        books = book_db.list_books()
         return {
             "status": "healthy",
             "service": "musequill-book-planner-api",
@@ -853,7 +771,7 @@ async def health_check(
             "timestamp": datetime.now().isoformat(),
             
             # Database status
-            "books_created": len(books_db),
+            "books_created": len(books),
             "database_healthy": True,
             
             # Agent system status
@@ -906,10 +824,7 @@ def setup_agent_routes(app: FastAPI) -> None:
 # Call this when setting up your FastAPI app
 setup_agent_routes(app)
 
-if __name__ == "__main__":
-    import uvicorn
-    import argparse
-    
+def run():
     # Command line argument parsing
     parser = argparse.ArgumentParser(description='MuseQuill Book Planner API')
     parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')

@@ -2,13 +2,11 @@
 MuseQuill MongoDB Client
 Python client for storing and managing book data in MongoDB
 """
-
 import os
-import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any, Union
+from typing import Dict, List, Optional, Any
 from uuid import UUID, uuid4
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from contextlib import asynccontextmanager
 
 import pymongo
@@ -17,27 +15,39 @@ from pymongo.errors import DuplicateKeyError, OperationFailure
 from bson import ObjectId
 import motor.motor_asyncio
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
+from musequill.config.logging import get_logger
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
+MONGODB_HOST=os.getenv('MONGODB_HOST')
+MONGODB_PORT=int(os.getenv('MONGODB_PORT'))
+MONGODB_DATABASE=os.getenv('MONGODB_DATABASE')
+MONGODB_USERNAME=os.getenv('MONGODB_USERNAME')
+MONGODB_PASSWORD=os.getenv('MONGODB_PASSWORD')
+MONGODB_AUTH_DATABASE=os.getenv('MONGODB_AUTH_DATABASE')
+
+# Connection Pool Settings
+MONGODB_MIN_POOL_SIZE=int(os.getenv('MONGODB_MIN_POOL_SIZE'))
+MONGODB_MAX_POOL_SIZE=int(os.getenv('MONGODB_MAX_POOL_SIZE'))
+MONGODB_MAX_IDLE_TIME_MS=int(os.getenv('MONGODB_IDLE_TIME_MS'))
+MONGODB_WAIT_QUEUE_TIMEOUT_MS=int(os.getenv('MONGODB_WAIT_QUEUE_TIMEOUT_MS'))
 
 @dataclass
 class MongoDBConfig:
     """MongoDB connection configuration."""
-    host: str = "localhost"
-    port: int = 27017
-    database: str = "musequill"
-    username: str = "musequill"
-    password: str = "musequill.ink.user"
-    auth_database: str = "musequill"
+    host: str = MONGODB_HOST
+    port: int = MONGODB_PORT
+    database: str = MONGODB_DATABASE
+    username: str = MONGODB_USERNAME
+    password: str = MONGODB_PASSWORD
+    auth_database: str = MONGODB_AUTH_DATABASE
     
     # Connection pool settings
-    min_pool_size: int = 5
-    max_pool_size: int = 50
-    max_idle_time_ms: int = 30000
-    wait_queue_timeout_ms: int = 5000
+    min_pool_size: int = MONGODB_MIN_POOL_SIZE
+    max_pool_size: int = MONGODB_MAX_POOL_SIZE
+    max_idle_time_ms: int = MONGODB_MAX_IDLE_TIME_MS
+    wait_queue_timeout_ms: int = MONGODB_WAIT_QUEUE_TIMEOUT_MS
     
     @property
     def connection_string(self) -> str:
@@ -47,6 +57,31 @@ class MongoDBConfig:
             f"{self.host}:{self.port}/{self.database}"
             f"?authSource={self.auth_database}"
         )
+
+    def __repr__(self) -> str:
+        return (
+            f"MongoDBConfig("
+            f"host='{self.host}', port={self.port}, database='{self.database}', "
+            f"username='{self.username}', password='***', "
+            f"auth_database='{self.auth_database}', "
+            f"min_pool_size={self.min_pool_size}, max_pool_size={self.max_pool_size}, "
+            f"max_idle_time_ms={self.max_idle_time_ms}, wait_queue_timeout_ms={self.wait_queue_timeout_ms})"
+        )
+
+    def to_dict(self, mask_sensitive: bool = True) -> dict:
+        """ Convert MongoDBConfig to dict for logging """
+        return {
+            "host": self.host,
+            "port": self.port,
+            "database": self.database,
+            "username": self.username,
+            "password": "***" if mask_sensitive else self.password,
+            "auth_database": self.auth_database,
+            "min_pool_size": self.min_pool_size,
+            "max_pool_size": self.max_pool_size,
+            "max_idle_time_ms": self.max_idle_time_ms,
+            "wait_queue_timeout_ms": self.wait_queue_timeout_ms,
+        }
 
 
 class BookStatus:
@@ -140,40 +175,16 @@ class MongoDBClient:
         Returns:
             Book ID as string
         """
-        # Generate UUID if not provided
-        book_id = book_data.get('_id', str(uuid4()))
-        
-        # Prepare book document
-        book_doc = {
-            '_id': book_id,
-            'created_at': datetime.now(timezone.utc),
-            'updated_at': datetime.now(timezone.utc),
-            'status': book_data.get('status', BookStatus.INITIALIZING),
-            'title': book_data.get('title', 'Untitled'),
-            'genre': book_data.get('genre', ''),
-            'estimated_word_count': book_data.get('estimated_word_count', 0),
-            'completion_percentage': book_data.get('completion_percentage', 0.0),
-            
-            # Complex nested data
-            'parameters': book_data.get('parameters', {}),
-            'planning_results': book_data.get('planning_results', {}),
-            'agent_workflows': book_data.get('agent_workflows', {}),
-            'validation_info': book_data.get('validation_info', {}),
-            
-            # Additional fields
-            'tags': book_data.get('tags', []),
-            'last_agent_id': book_data.get('last_agent_id'),
-            'approval_status': book_data.get('approval_status', 'pending')
-        }
-        
+        book_doc = prepare_book_document(book_data)
+        book_id = book_doc.get('_id')
         try:
             result = self._books_collection.insert_one(book_doc)
-            logger.info(f"Created book with ID: {book_id}")
+            logger.info(f"Created book with ID: {book_id}: {result}")
             return book_id
             
-        except DuplicateKeyError:
+        except DuplicateKeyError as e:
             logger.error(f"Book with ID {book_id} already exists")
-            raise ValueError(f"Book with ID {book_id} already exists")
+            raise ValueError(f"Book with ID {book_id} already exists") from e
         except Exception as e:
             logger.error(f"Failed to create book: {e}")
             raise
@@ -226,7 +237,30 @@ class MongoDBClient:
         except Exception as e:
             logger.error(f"Failed to update book {book_id}: {e}")
             raise
-    
+
+    def book_exists(self, book_id: str) -> bool:
+            """
+            Check if a book exists in the collection.
+            
+            Args:
+                book_id: Book UUID as string
+                
+            Returns:
+                True if book exists, False otherwise
+            """
+            try:
+                # Use count_documents with limit=1 for efficiency
+                count = self._books_collection.count_documents({'_id': book_id}, limit=1)
+                exists = count > 0
+                
+                logger.debug(f"Book {book_id} exists: {exists}")
+                return exists
+                
+            except Exception as e:
+                logger.error(f"Failed to check if book {book_id} exists: {e}")
+                raise
+
+
     def update_book_status(self, book_id: str, status: str, additional_data: Optional[Dict] = None) -> bool:
         """
         Update book status with optional additional data.
@@ -526,43 +560,134 @@ class AsyncMongoDBClient:
             raise
 
 
-# Example usage and testing
-if __name__ == "__main__":
-    # Test the MongoDB client
-    config = MongoDBConfig()
+def prepare_book_document(book_data:Dict) -> Dict:
+    """
+    Prepare a complete book document for MongoDB storage from book_data.
+    Handles enum serialization and ensures all fields are captured.
+    """
+    book_id = book_data.get('_id', str(uuid4()))
     
-    # Test synchronous client
-    with MongoDBClient(config) as client:
-        # Health check
-        health = client.health_check()
-        print("Health check:", health)
+    # Function to safely extract enum values
+    def safe_enum_value(value):
+        if hasattr(value, 'value'):
+            return value.value
+        return value
+    
+    # Function to safely extract list of enum values
+    def safe_enum_list(enum_list):
+        if not enum_list:
+            return []
+        return [safe_enum_value(item) for item in enum_list]
+    
+    # Prepare complete book document
+    book_doc = {
+        # Core identification and timestamps
+        '_id': str(book_id),
+        'created_at': book_data.get('created_at', datetime.now(timezone.utc)),
+        'updated_at': book_data.get('updated_at', datetime.now(timezone.utc)),
         
-        # Create a test book
-        test_book = {
-            'title': 'Test Book',
-            'genre': 'fiction',
-            'estimated_word_count': 50000,
-            'parameters': {
-                'genre': 'fantasy',
-                'length': 'novel',
-                'style': 'epic'
-            }
-        }
+        # Status and progress
+        'status': book_data.get('status', BookStatus.INITIALIZING),
+        'planning_status': book_data.get('planning_status', 'pending'),
+        'completion_percentage': book_data.get('completion_percentage', 0.0),
+        'estimated_word_count': book_data.get('estimated_word_count', 0),
+        'estimated_chapters': book_data.get('estimated_chapters', 0),
+        'validation_warnings': book_data.get('validation_warnings', []),
         
-        book_id = client.create_book(test_book)
-        print(f"Created book: {book_id}")
+        # Core book information
+        'title': book_data.get('title', 'Untitled'),
+        'subtitle': book_data.get('subtitle'),
+        'description': book_data.get('description'),
+        'additional_notes': book_data.get('additional_notes'),
         
-        # Get the book
-        retrieved_book = client.get_book(book_id)
-        print(f"Retrieved book: {retrieved_book['title']}")
+        # Genre and world building
+        'genre_info': {
+            'genre': book_data.get('genre_info', {}).get('genre', safe_enum_value(book_data.get('parameters', {}).get('genre', ''))),
+            'sub_genre': book_data.get('genre_info', {}).get('sub_genre'),
+            'is_fiction': book_data.get('genre_info', {}).get('is_fiction', True),
+            'available_subgenres': book_data.get('genre_info', {}).get('available_subgenres', []),
+            'world_type': book_data.get('genre_info', {}).get('world_type'),
+            'magic_system': book_data.get('genre_info', {}).get('magic_system'),
+            'technology_level': book_data.get('genre_info', {}).get('technology_level'),
+        },
         
-        # Update book status
-        client.update_book_status(book_id, BookStatus.PLANNING)
+        # Story structure and plot
+        'story_info': {
+            'length': book_data.get('story_info', {}).get('length'),
+            'structure': book_data.get('story_info', {}).get('structure'),
+            'plot_type': book_data.get('story_info', {}).get('plot_type'),
+            'pov': book_data.get('story_info', {}).get('pov'),
+            'pacing': book_data.get('story_info', {}).get('pacing'),
+            'conflict_types': book_data.get('story_info', {}).get('conflict_types', []),
+            'complexity': book_data.get('story_info', {}).get('complexity'),
+        },
         
-        # List books
-        books = client.list_books()
-        print(f"Total books: {len(books)}")
+        # Character information
+        'character_info': {
+            'main_character_role': book_data.get('character_info', {}).get('main_character_role'),
+            'character_archetype': book_data.get('character_info', {}).get('character_archetype'),
+        },
         
-        # Clean up
-        client.delete_book(book_id)
-        print("Test book deleted")
+        # Writing style and tone
+        'style_info': {
+            'writing_style': book_data.get('style_info', {}).get('writing_style'),
+            'tone': book_data.get('style_info', {}).get('tone'),
+        },
+        
+        # Target audience
+        'audience_info': {
+            'age_group': book_data.get('audience_info', {}).get('age_group'),
+            'audience_type': book_data.get('audience_info', {}).get('audience_type'),
+            'reading_level': book_data.get('audience_info', {}).get('reading_level'),
+        },
+        
+        # Publication information
+        'publication_info': {
+            'publication_route': book_data.get('publication_info', {}).get('publication_route'),
+            'content_warnings': book_data.get('publication_info', {}).get('content_warnings', []),
+        },
+        
+        # AI and writing process
+        'process_info': {
+            'ai_assistance_level': book_data.get('process_info', {}).get('ai_assistance_level'),
+            'research_priority': book_data.get('process_info', {}).get('research_priority'),
+            'writing_schedule': book_data.get('process_info', {}).get('writing_schedule'),
+        },
+        
+        # Validation information
+        'validation_info': {
+            'genre_subgenre_valid': book_data.get('validation_info', {}).get('genre_subgenre_valid', True),
+            'warnings': book_data.get('validation_info', {}).get('warnings', []),
+        },
+        
+        # Agent and workflow information
+        'agent_id': book_data.get('agent_id'),
+        'last_agent_id': book_data.get('last_agent_id'),
+        'planning_results': book_data.get('planning_results', {}),
+        'agent_workflows': book_data.get('agent_workflows', {}),
+        'status_message': book_data.get('status_message'),
+        'next_steps': book_data.get('next_steps', []),
+        
+        # Error tracking
+        'error_message': book_data.get('error_message'),
+        'retry_count': book_data.get('retry_count', 0),
+        'approval_status': book_data.get('approval_status', 'pending'),
+        
+        # Raw parameters (for backward compatibility and debugging)
+        'parameters': book_data.get('parameters', {}),
+        
+        # Additional metadata
+        'tags': book_data.get('tags', []),
+        'version': book_data.get('version', 1),
+        'metadata': book_data.get('metadata', {}),
+    }
+    
+    # Remove None values to keep the document clean (optional)
+    book_doc = {k: v for k, v in book_doc.items() if v is not None}
+    
+    # Clean nested dictionaries of None values
+    for key, value in book_doc.items():
+        if isinstance(value, dict):
+            book_doc[key] = {k: v for k, v in value.items() if v is not None}
+    
+    return book_doc

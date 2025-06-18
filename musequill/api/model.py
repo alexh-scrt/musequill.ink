@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from musequill.models.presets import (
     GenreType,
-    SubGenre,
     BookLength,
     StoryStructure,
     PlotType,
@@ -31,6 +30,10 @@ from musequill.models.presets import (
 from musequill.models.subgenre import (
     validate_book_genre_subgenre
 )
+from musequill.models.word_count import WORD_COUNT_MAPPING
+from musequill.models.presets import validate_enum_combination
+from musequill.models.subgenre import SubGenreRegistry
+
 
 class BookCreationRequest(BaseModel):
     """Request model for creating a new book plan."""
@@ -164,3 +167,107 @@ class GenreSubgenreValidationRequest(BaseModel):
     """Request model for genre-subgenre validation."""
     genre: str
     subgenre: str
+
+
+def book_request_to_book_data(request:BookCreationRequest, book_id:str) -> Dict:
+    """ Convert BookCreationRequest to book_data """
+    default_word_count:int = WORD_COUNT_MAPPING.get(BookLength.NOVELLA)
+    estimated_word_count = WORD_COUNT_MAPPING.get(request.length, default_word_count)
+    estimated_chapters = max(1, estimated_word_count // 3000)  # ~3000 words per chapter
+        
+        # Validate enum combinations
+    validation_warnings = validate_enum_combination(request.model_dump())
+    book_data = {
+        "_id": book_id,
+        "created_at": datetime.now(),
+        "updated_at": datetime.now(),
+        "parameters": request.dict(),  # Keep the full request for reference
+        "status": "initializing",
+        "planning_status": "pending",
+        "estimated_word_count": estimated_word_count,
+        "estimated_chapters": estimated_chapters,
+        "completion_percentage": 0.0,
+        "validation_warnings": validation_warnings,
+        
+        # Core Book Information (from BookCreationRequest)
+        "title": request.title,
+        "subtitle": request.subtitle,
+        "description": request.description,
+        "additional_notes": request.additional_notes,
+        
+        # Genre and Classification
+        "genre_info": {
+            "genre": request.genre.value,
+            "sub_genre": request.sub_genre,
+            "is_fiction": request.genre.is_fiction,
+            "available_subgenres": SubGenreRegistry.get_subgenre_choices(request.genre.value),
+            "world_type": request.world_type.value if request.world_type else None,
+            "magic_system": request.magic_system.value if request.magic_system else None,
+            "technology_level": request.technology_level.value if request.technology_level else None,
+        },
+        
+        # Story Structure and Plot
+        "story_info": {
+            "length": request.length.value,
+            "structure": request.structure.value,
+            "plot_type": request.plot_type.value,
+            "pov": request.pov.value,
+            "pacing": request.pacing.value,
+            "conflict_types": [conflict.value for conflict in request.conflict_types],
+            "complexity": request.complexity.value if request.complexity else None,
+        },
+        
+        # Character Information
+        "character_info": {
+            "main_character_role": request.main_character_role.value,
+            "character_archetype": request.character_archetype.value,
+        },
+        
+        # Writing Style and Tone
+        "style_info": {
+            "writing_style": request.writing_style.value,
+            "tone": request.tone.value,
+        },
+        
+        # Target Audience
+        "audience_info": {
+            "age_group": request.age_group.value,
+            "audience_type": request.audience_type.value,
+            "reading_level": request.reading_level.value,
+        },
+        
+        # Publication and Content
+        "publication_info": {
+            "publication_route": request.publication_route.value,
+            "content_warnings": [warning.value for warning in request.content_warnings],
+        },
+        
+        # AI and Writing Process
+        "process_info": {
+            "ai_assistance_level": request.ai_assistance_level.value,
+            "research_priority": request.research_priority.value,
+            "writing_schedule": request.writing_schedule.value,
+        },
+        
+        # Validation Information
+        "validation_info": {
+            "genre_subgenre_valid": True if not request.sub_genre else validate_book_genre_subgenre(request.genre.value, request.sub_genre)['valid'],
+            "warnings": validate_enum_combination(request.dict())
+        },
+        
+        # Agent-related fields (unchanged)
+        "agent_id": None,
+        "planning_results": None,
+        "status_message": "Book created, preparing for AI analysis...",
+        "next_steps": [
+            "AI agents are analyzing your requirements",
+            "Story outline will be created", 
+            "Chapter structure will be planned",
+            "Research requirements will be identified"
+        ],
+        
+        # Error tracking (unchanged)
+        "error_message": None,
+        "retry_count": 0
+    }
+    return book_data

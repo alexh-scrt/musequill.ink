@@ -14,6 +14,7 @@ from musequill.agents.factory import get_agent_factory, AgentFactory
 from musequill.core.base.agent import AgentType
 from musequill.agents.planning import PlanningAgent
 from musequill.models.presets import GenreType
+from musequill.database import book as book_db
 
 logger = structlog.get_logger(__name__)
 
@@ -43,7 +44,7 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
             raise ValueError("Request missing required 'title' attribute")
         
         # Update book status to indicate planning has started
-        await update_book_status(book_id, "ai_planning_started", {
+        await update_book_status(book_id, "planning", {
             "planning_started_at": datetime.now(),
             "agent_type": "planning",
             "status_message": "AI planning agent is analyzing your requirements..."
@@ -73,11 +74,11 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
             book_id=str(book_id)
         )
         
-        # Update status
-        await update_book_status(book_id, "ai_planning_active", {
-            "agent_id": planning_agent.agent_id,
-            "status_message": "Planning agent is creating your book outline..."
-        })
+        # # Update status
+        # await update_book_status(book_id, "ai_planning_active", {
+        #     "agent_id": planning_agent.agent_id,
+        #     "status_message": "Planning agent is creating your book outline..."
+        # })
         
         # Create the book plan using the planning agent
         planning_result = await planning_agent.create_book_plan_from_request(request)
@@ -90,7 +91,7 @@ async def start_book_planning(book_id: UUID, request) -> Dict[str, Any]:
         processed_results = await process_planning_results(book_id, planning_result, request)
         
         # Update book with planning results
-        await update_book_status(book_id, "planning_completed", {
+        await update_book_status(book_id, "planned", {
             "planning_completed_at": datetime.now(),
             "agent_id": planning_agent.agent_id,
             "planning_results": processed_results,
@@ -298,7 +299,8 @@ async def update_book_status(
     try:
         # This assumes you have a books_db dict or database
         # Replace this with your actual database update logic
-        
+
+        book_db.update_book_status(book_id, status, additional_data)
         # For the in-memory dict approach from your existing code:
         # if book_id in books_db:
         #     books_db[book_id]["status"] = status

@@ -77,6 +77,195 @@ class GenreType(str, Enum):
         }
         return self in fiction_genres
 
+def get_genre_mapping():
+    """
+    Complete genre mapping dictionary for all GenreType enum values.
+    Includes common variations and aliases for flexibility.
+    """
+    genre_mapping = {
+        # Fiction Genres - Direct mappings
+        "FANTASY": GenreType.FANTASY,
+        "SCIENCE_FICTION": GenreType.SCIENCE_FICTION,
+        "MYSTERY": GenreType.MYSTERY,
+        "ROMANCE": GenreType.ROMANCE,
+        "THRILLER": GenreType.THRILLER,
+        "HORROR": GenreType.HORROR,
+        "HISTORICAL_FICTION": GenreType.HISTORICAL_FICTION,
+        "LITERARY_FICTION": GenreType.LITERARY_FICTION,
+        "YOUNG_ADULT": GenreType.YOUNG_ADULT,
+        "ADVENTURE": GenreType.ADVENTURE,
+        "DRAMA": GenreType.DRAMA,
+        "COMEDY": GenreType.COMEDY,
+        "WESTERN": GenreType.WESTERN,
+        "CRIME": GenreType.CRIME,
+        "DYSTOPIAN": GenreType.DYSTOPIAN,
+        "URBAN_FANTASY": GenreType.URBAN_FANTASY,
+        "PARANORMAL": GenreType.PARANORMAL,
+        "CONTEMPORARY": GenreType.CONTEMPORARY,
+        
+        # Non-Fiction Genres - Direct mappings
+        "BIOGRAPHY": GenreType.BIOGRAPHY,
+        "MEMOIR": GenreType.MEMOIR,
+        "SELF_HELP": GenreType.SELF_HELP,
+        "BUSINESS": GenreType.BUSINESS,
+        "HEALTH": GenreType.HEALTH,
+        "TRAVEL": GenreType.TRAVEL,
+        "COOKING": GenreType.COOKING,
+        "HISTORY": GenreType.HISTORY,
+        "SCIENCE": GenreType.SCIENCE,
+        "TECHNOLOGY": GenreType.TECHNOLOGY,
+        "PHILOSOPHY": GenreType.PHILOSOPHY,
+        "RELIGION": GenreType.RELIGION,
+        "POLITICS": GenreType.POLITICS,
+        "EDUCATION": GenreType.EDUCATION,
+        "REFERENCE": GenreType.REFERENCE,
+#        "TRUE_CRIME": GenreType.TRUE_CRIME,
+        
+        # Specialized Genres - Direct mappings
+        "CHILDREN": GenreType.CHILDREN,
+        "PICTURE_BOOK": GenreType.PICTURE_BOOK,
+        "POETRY": GenreType.POETRY,
+        "SCREENPLAY": GenreType.SCREENPLAY,
+        "TEXTBOOK": GenreType.TEXTBOOK,
+        "MANUAL": GenreType.MANUAL,
+        "OTHER": GenreType.OTHER,
+        
+        # Common Variations and Aliases
+        "SCI_FI": GenreType.SCIENCE_FICTION,
+        "SCIFI": GenreType.SCIENCE_FICTION,
+        "SF": GenreType.SCIENCE_FICTION,
+        "YA": GenreType.YOUNG_ADULT,
+        "HISTORICAL": GenreType.HISTORICAL_FICTION,
+        "LITERARY": GenreType.LITERARY_FICTION,
+        "TRUE_CRIME": GenreType.TRUE_CRIME,
+        "TRUECRIME": GenreType.TRUE_CRIME,
+        "SELF_IMPROVEMENT": GenreType.SELF_HELP,
+        "SELFHELP": GenreType.SELF_HELP,
+        "HELP": GenreType.SELF_HELP,
+        "COOKBOOK": GenreType.COOKING,
+        "FOOD": GenreType.COOKING,
+        "TECH": GenreType.TECHNOLOGY,
+        "IT": GenreType.TECHNOLOGY,
+        "COMPUTING": GenreType.TECHNOLOGY,
+        "MEDICAL": GenreType.HEALTH,
+        "FITNESS": GenreType.HEALTH,
+        "WELLNESS": GenreType.HEALTH,
+        "CHILDRENS": GenreType.CHILDREN,
+        "KIDS": GenreType.CHILDREN,
+        "CHILD": GenreType.CHILDREN,
+        "PICTURE": GenreType.PICTURE_BOOK,
+        "PICTUREBOOK": GenreType.PICTURE_BOOK,
+        "POEMS": GenreType.POETRY,
+        "SCRIPT": GenreType.SCREENPLAY,
+        "SCREENWRITING": GenreType.SCREENPLAY,
+        "PLAY": GenreType.SCREENPLAY,
+        "ACADEMIC": GenreType.TEXTBOOK,  # Common mapping for academic content
+        "EDUCATIONAL": GenreType.EDUCATION,
+        "LEARNING": GenreType.EDUCATION,
+        "TEACHING": GenreType.EDUCATION,
+        "REFERENCE_BOOK": GenreType.REFERENCE,
+        "ENCYCLOPEDIA": GenreType.REFERENCE,
+        "DICTIONARY": GenreType.REFERENCE,
+        "GUIDE": GenreType.MANUAL,
+        "HOW_TO": GenreType.MANUAL,
+        "HOWTO": GenreType.MANUAL,
+        "INSTRUCTIONS": GenreType.MANUAL,
+        "TUTORIAL": GenreType.MANUAL,
+        
+        # Genre Categories (mapping to most representative genre)
+        "FICTION": GenreType.LITERARY_FICTION,  # Default fiction mapping
+        "NON_FICTION": GenreType.REFERENCE,     # Default non-fiction mapping
+        "NONFICTION": GenreType.REFERENCE,
+        
+        # Additional common terms
+        "SUPERNATURAL": GenreType.PARANORMAL,
+        "MAGIC": GenreType.FANTASY,
+        "MAGICAL": GenreType.FANTASY,
+        "DETECTIVE": GenreType.MYSTERY,
+        "SUSPENSE": GenreType.THRILLER,
+        "LOVE": GenreType.ROMANCE,
+        "SCARY": GenreType.HORROR,
+        "FUNNY": GenreType.COMEDY,
+        "HUMOROUS": GenreType.COMEDY,
+        "HUMOR": GenreType.COMEDY,
+        "WAR": GenreType.HISTORICAL_FICTION,
+        "MILITARY": GenreType.HISTORICAL_FICTION,
+        "SPACE": GenreType.SCIENCE_FICTION,
+        "FUTURE": GenreType.SCIENCE_FICTION,
+        "FUTURISTIC": GenreType.SCIENCE_FICTION,
+        "DYSTOPIA": GenreType.DYSTOPIAN,
+        "URBAN": GenreType.URBAN_FANTASY,
+        "CITY": GenreType.URBAN_FANTASY,
+        "GHOST": GenreType.PARANORMAL,
+        "VAMPIRE": GenreType.PARANORMAL,
+        "WEREWOLF": GenreType.PARANORMAL,
+        "MODERN": GenreType.CONTEMPORARY,
+        "CURRENT": GenreType.CONTEMPORARY,
+        "PRESENT": GenreType.CONTEMPORARY,
+        
+        # Business subcategories
+        "ENTREPRENEURSHIP": GenreType.BUSINESS,
+        "MARKETING": GenreType.BUSINESS,
+        "FINANCE": GenreType.BUSINESS,
+        "MANAGEMENT": GenreType.BUSINESS,
+        "LEADERSHIP": GenreType.BUSINESS,
+        "ECONOMICS": GenreType.BUSINESS,
+        "INVESTING": GenreType.BUSINESS,
+        "STARTUP": GenreType.BUSINESS,
+        
+        # Health subcategories
+        "NUTRITION": GenreType.HEALTH,
+        "DIET": GenreType.HEALTH,
+        "EXERCISE": GenreType.HEALTH,
+        "MENTAL_HEALTH": GenreType.HEALTH,
+        "PSYCHOLOGY": GenreType.HEALTH,
+        
+        # Travel subcategories
+        "TOURISM": GenreType.TRAVEL,
+        "GUIDEBOOK": GenreType.TRAVEL,
+        "ADVENTURE_TRAVEL": GenreType.TRAVEL,
+        
+        # Religion subcategories
+        "SPIRITUAL": GenreType.RELIGION,
+        "SPIRITUALITY": GenreType.RELIGION,
+        "FAITH": GenreType.RELIGION,
+        "CHRISTIAN": GenreType.RELIGION,
+        "ISLAMIC": GenreType.RELIGION,
+        "BUDDHIST": GenreType.RELIGION,
+        "JEWISH": GenreType.RELIGION,
+    }
+    
+    return genre_mapping
+
+
+def map_genre(genre_string: str) -> GenreType:
+    """
+    Map a genre string to a GenreType enum value.
+    
+    Args:
+        genre_string: String representation of genre (case-insensitive)
+        
+    Returns:
+        GenreType enum value
+        
+    Raises:
+        KeyError: If genre string is not found in mapping
+    """
+    mapping = get_genre_mapping()
+    normalized_genre = genre_string.upper().strip()
+    
+    if normalized_genre in mapping:
+        return mapping[normalized_genre]
+    else:
+        # Try to find partial matches
+        for key, value in mapping.items():
+            if normalized_genre in key or key in normalized_genre:
+                return value
+        
+        # If no match found, raise error with suggestions
+        raise KeyError(f"Genre '{genre_string}' not found. Available genres: {list(mapping.keys())}")
+
+
 
 class SubGenre(str, Enum):
     """Sub-genre classifications for more specific categorization."""

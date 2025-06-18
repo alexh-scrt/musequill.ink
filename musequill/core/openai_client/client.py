@@ -378,3 +378,9 @@ class OpenAIClient:
             yield self
         finally:
             await self.close()
+
+# Dependency injection for agent system
+async def get_openai_client() -> OpenAIClient:
+    """Get OpenAI client instance."""
+    return OpenAIClient()
+
