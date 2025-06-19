@@ -662,7 +662,7 @@ class QualityReviewerAgent:
             
             # Create prompts for consistency assessment
             system_prompt = self.prompts.get_consistency_assessment_system_prompt(state)
-            human_prompt = self.prompts.get_consistency_assessment_human_prompt(chapters, combined_content, state)
+            human_prompt = self.prompts.get_consistency_assessment_human_prompt(chapters, state)
             
             # Get LLM assessment
             messages = [

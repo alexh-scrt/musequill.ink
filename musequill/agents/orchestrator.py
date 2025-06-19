@@ -169,7 +169,7 @@ def writing_planning_node(state: BookWritingState) -> BookWritingState:
         logger.info(f"Starting writing planning for book {state['book_id']}")
         
         # Import here to avoid circular imports
-        from musequill.agents.writing_planner import WritingPlannerAgent
+        from musequill.agents.writing_planner.writing_planner_agent import WritingPlannerAgent
         
         # Create writing planner instance
         planner = WritingPlannerAgent()
@@ -209,7 +209,7 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
         logger.info(f"Starting chapter writing for book {state['book_id']}")
         
         # Import here to avoid circular imports
-        from musequill.agents.chapter_writer.chapter_writer_agent import ChapterWriterAgent
+        from musequill.agents.writer.chapter_writer_agent import ChapterWriterAgent
         
         # Create chapter writer instance
         writer = ChapterWriterAgent()
@@ -545,7 +545,7 @@ def final_assembly_node(state: BookWritingState) -> BookWritingState:
         logger.info(f"Starting final assembly for book {state['book_id']}")
         
         # Import here to avoid circular imports
-        from musequill.agents.final_assembler import FinalAssemblerAgent
+        from musequill.agents.assembler.final_assembler_agent import FinalAssemblerAgent
         
         # Create final assembler instance
         assembler = FinalAssemblerAgent()
@@ -581,7 +581,7 @@ def book_storage_node(state: BookWritingState) -> BookWritingState:
         logger.info(f"Starting book storage for book {state['book_id']}")
         
         # Import here to avoid circular imports
-        from musequill.agents.book_storer import BookStorerAgent
+        from musequill.agents.book_storer.book_storer_agent import BookStorerAgent
         
         # Create book storer instance
         storer = BookStorerAgent()
@@ -630,25 +630,25 @@ def should_continue_writing(state: BookWritingState) -> Literal["chapter_writer"
     return "quality_reviewer"
 
 
-def should_revise_or_complete(state: BookWritingState) -> Literal["chapter_writer", "final_assembler", "END"]:
-    """Determine if revisions are needed or if we can proceed to final assembly."""
-    # Check if maximum revisions reached
-    MAX_REVISIONS = 3  # Configurable limit
+# def should_revise_or_complete(state: BookWritingState) -> Literal["chapter_writer", "final_assembler", "END"]:
+#     """Determine if revisions are needed or if we can proceed to final assembly."""
+#     # Check if maximum revisions reached
+#     MAX_REVISIONS = 3  # Configurable limit
     
-    if state['revision_count'] >= MAX_REVISIONS:
-        logger.warning(f"Book {state['book_id']} reached maximum revisions ({MAX_REVISIONS}), proceeding to final assembly")
-        return "final_assembler"
+#     if state['revision_count'] >= MAX_REVISIONS:
+#         logger.warning(f"Book {state['book_id']} reached maximum revisions ({MAX_REVISIONS}), proceeding to final assembly")
+#         return "final_assembler"
     
-    # Check if quality review indicated revisions needed
-    if state.get('review_notes') and any('revision' in note.lower() for note in state['review_notes']):
-        return "chapter_writer"
+#     # Check if quality review indicated revisions needed
+#     if state.get('review_notes') and any('revision' in note.lower() for note in state['review_notes']):
+#         return "chapter_writer"
     
-    # Check quality score threshold
-    quality_threshold = 0.8  # Configurable threshold
-    if state.get('quality_score', 0) < quality_threshold:
-        return "chapter_writer"
+#     # Check quality score threshold
+#     quality_threshold = 0.8  # Configurable threshold
+#     if state.get('quality_score', 0) < quality_threshold:
+#         return "chapter_writer"
     
-    return "final_assembler"
+#     return "final_assembler"
 
 
 def is_processing_complete(state: BookWritingState) -> Literal["END"]:
