@@ -10,7 +10,7 @@ import structlog
 
 from musequill.core.base.agent import BaseAgent, AgentConfig, AgentType, AgentState
 from musequill.core.openai_client import OpenAIClient
-from musequill.models.presets import GenreType, get_genre_mapping
+from musequill.models.presets import GenreType, BookLength, get_genre_mapping
 from musequill.models.planning import (
     PlanningRequest, PlanningResult, StoryOutline, ChapterPlan,
     ResearchRequirements, ResearchRequirement, ResearchPriority,
@@ -158,29 +158,33 @@ class PlanningAgent(BaseAgent):
         #     "ACADEMIC": GenreType.ACADEMIC,
         # }
         
+        
+
         genre_mapping:Dict[str, GenreType] = get_genre_mapping()
 
         genre = genre_mapping.get(book_request.genre.name, GenreType.OTHER)
         
         # Calculate target length based on BookLength enum
-        length_mapping = {
-            "FLASH_FICTION": 500,
-            "SHORT_STORY": 4000,
-            "NOVELETTE": 12500,
-            "NOVELLA": 30000,
-            "SHORT_NOVEL": 50000,
-            "STANDARD_NOVEL": 75000,
-            "LONG_NOVEL": 105000,
-            "EPIC_NOVEL": 150000,
-            "ARTICLE": 1250,
-            "ESSAY": 3000,
-            "GUIDE": 10000,
-            "MANUAL": 32500,
-            "COMPREHENSIVE_BOOK": 100000
-        }
+
+        # length_mapping = {
+        #     "FLASH_FICTION": 500,
+        #     "SHORT_STORY": 4000,
+        #     "NOVELETTE": 12500,
+        #     "NOVELLA": 30000,
+        #     "SHORT_NOVEL": 50000,
+        #     "STANDARD_NOVEL": 75000,
+        #     "LONG_NOVEL": 105000,
+        #     "EPIC_NOVEL": 150000,
+        #     "ARTICLE": 1250,
+        #     "ESSAY": 3000,
+        #     "GUIDE": 10000,
+        #     "MANUAL": 32500,
+        #     "COMPREHENSIVE_BOOK": 100000
+        # }
         
-        target_length = length_mapping.get(book_request.length.name, 75000)
-        
+        # target_length = length_mapping.get(book_request.length.name, 75000)
+        book_len: Optional[BookLength] = book_request.length            
+        target_length = book_len.word_count_range[1] if book_len else 75000
         # Build special requirements
         special_requirements = []
         

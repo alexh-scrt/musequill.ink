@@ -243,8 +243,8 @@ async def start_book_planning_with_error_handling(
                 raise ValueError(f"Planning failed: {error_msg}")
             
             # Update book with success
-            if book_db.book_exists(book_id):
-                book_db.update_book(book_id, {
+            if book_db.book_exists(str(book_id)):
+                book_db.update_book(str(book_id), {
                     "planning_completed": True,
                     "retry_count": retry_count,
                     "last_attempt": datetime.now(),
