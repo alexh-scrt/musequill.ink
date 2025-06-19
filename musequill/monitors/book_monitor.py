@@ -30,10 +30,11 @@ from musequill.config.logging import get_logger
 
 from musequill.monitors.book_monitor_config import BookMonitorConfig
 
+
 logger = get_logger(__name__)
 
 
-class BookPipelineMonitor:
+class BookMonitor:
     """
     Monitors the books collection and sends ready books to the writing pipeline.
     """
@@ -67,36 +68,12 @@ class BookPipelineMonitor:
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
 
+
     def _signal_handler(self, signum: int, frame) -> None:
         """Handle shutdown signals."""
         logger.info(f"Received signal {signum}, initiating monitor shutdown...")
         self.stop()
 
-    def stop(self, timeout: float = 10.0) -> None:
-        """
-        Stop the book monitor gracefully.
-        
-        Args:
-            timeout: Maximum time to wait for graceful shutdown
-        """
-        if not self.running:
-            return
-        
-        logger.info("Stopping book monitor...")
-        
-        # Signal shutdown
-        self.shutdown_event.set()
-        self.running = False
-        
-        # Wait for the monitor thread to finish
-        if self.monitor_thread and self.monitor_thread.is_alive():
-            logger.info(f"Waiting up to {timeout}s for monitor thread to stop...")
-            self.monitor_thread.join(timeout=timeout)
-            
-            if self.monitor_thread.is_alive():
-                logger.warning("Monitor thread did not stop gracefully within timeout")
-            else:
-                logger.info("Monitor thread stopped successfully")
 
     async def initialize(self) -> None:
         """Initialize database and queue connections."""
@@ -130,6 +107,64 @@ class BookPipelineMonitor:
         except Exception as e:
             logger.error(f"Failed to initialize connections: {e}")
             raise
+
+
+    def start(self) -> None:
+        """
+        Start the book monitor in a separate daemon thread.
+        This method returns immediately after starting the thread.
+        """
+        if self.running:
+            logger.warning("Book monitor is already running")
+            return
+        
+        logger.info("Starting threaded book monitor...")
+        
+        # Create and start the monitor thread
+        self.monitor_thread = threading.Thread(
+            target=self._run_async_loop,
+            name="BookMonitorThread",
+            daemon=True  # Dies when main thread dies
+        )
+        
+        self.monitor_thread.start()
+        
+        # Give the thread a moment to start up
+        time.sleep(1)
+        
+        if self.monitor_thread.is_alive():
+            logger.info("Book monitor thread started successfully")
+        else:
+            logger.error("Failed to start book monitor thread")
+            self.running = False
+
+
+    def stop(self, timeout: float = 10.0) -> None:
+        """
+        Stop the book monitor gracefully.
+        
+        Args:
+            timeout: Maximum time to wait for graceful shutdown
+        """
+        if not self.running:
+            return
+        
+        logger.info("Stopping book monitor...")
+        
+        # Signal shutdown
+        self.shutdown_event.set()
+        self.running = False
+        
+        # Wait for the monitor thread to finish
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            logger.info(f"Waiting up to {timeout}s for monitor thread to stop...")
+            self.monitor_thread.join(timeout=timeout)
+            
+            if self.monitor_thread.is_alive():
+                logger.warning("Monitor thread did not stop gracefully within timeout")
+            else:
+                logger.info("Monitor thread stopped successfully")
+
     
     def get_ready_books_filter(self) -> Dict:
         """
@@ -428,72 +463,3 @@ class BookPipelineMonitor:
             if hasattr(self, 'loop') and not loop.is_closed():
                 loop.run_until_complete(self.shutdown())
                 loop.close()
-
-    def start(self) -> None:
-        """
-        Start the book monitor in a separate daemon thread.
-        This method returns immediately after starting the thread.
-        """
-        if self.running:
-            logger.warning("Book monitor is already running")
-            return
-        
-        logger.info("Starting threaded book monitor...")
-        
-        # Create and start the monitor thread
-        self.monitor_thread = threading.Thread(
-            target=self._run_async_loop,
-            name="BookMonitorThread",
-            daemon=True  # Dies when main thread dies
-        )
-        
-        self.monitor_thread.start()
-        
-        # Give the thread a moment to start up
-        time.sleep(1)
-        
-        if self.monitor_thread.is_alive():
-            logger.info("Book monitor thread started successfully")
-        else:
-            logger.error("Failed to start book monitor thread")
-            self.running = False
-
-
-def main():
-    """
-    Test function for BookPipelineMonitor.
-    Creates a monitor instance, starts it, runs for a few seconds, then stops it.
-    """
-    import time
-    
-    print("Testing BookPipelineMonitor...")
-    
-    # Create monitor instance
-    monitor = BookPipelineMonitor()
-    
-    try:
-        # Start the monitor
-        print("Starting monitor...")
-        monitor.start()
-        
-        # Let it run for 10 seconds
-        print("Monitor running for 10 seconds...")
-        time.sleep(10)
-        
-        # Stop the monitor
-        print("Stopping monitor...")
-        monitor.stop(timeout=5.0)
-        
-        print("Test completed successfully!")
-        
-    except KeyboardInterrupt:
-        print("\nReceived Ctrl+C, stopping monitor...")
-        monitor.stop(timeout=5.0)
-    except Exception as e:
-        print(f"Error during test: {e}")
-        monitor.stop(timeout=5.0)
-
-
-if __name__ == "__main__":
-    main()
-

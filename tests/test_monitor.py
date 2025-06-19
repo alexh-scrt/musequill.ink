@@ -7,7 +7,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import bootstrap
 
-from musequill.monitors.book_monitor import BookPipelineMonitor
+from musequill.monitors.book_monitor import BookMonitor
 
 def main():
     """
@@ -18,7 +18,7 @@ def main():
     print("Testing BookPipelineMonitor...")
     
     # Create monitor instance
-    monitor = BookPipelineMonitor()
+    monitor = BookMonitor()
     
     try:
         # Start the monitor

@@ -7,7 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class BookMonitorConfig(BaseSettings):
     """Configuration settings for the book pipeline monitor."""
-    
+
     # MongoDB settings
     mongodb_url: str = Field(
         default="mongodb://localhost:27017",
@@ -35,8 +35,8 @@ class BookMonitorConfig(BaseSettings):
         description="Database password"
     )
     auth_database: str = Field(
-        default="admin",
-        validation_alias="MONGODB_AUTH_DATABASE", 
+        default="musequill",
+        validation_alias="MONGODB_AUTH_DATABASE",
         description="MongoDB authentication database"
     )
 
