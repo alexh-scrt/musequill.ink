@@ -206,40 +206,118 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
     Processes chapters iteratively until all are complete.
     """
     try:
-        logger.info(f"Starting chapter writing for book {state['book_id']}, chapter {state['current_chapter'] + 1}")
+        logger.info(f"Starting chapter writing for book {state['book_id']}")
         
         # Import here to avoid circular imports
-        from musequill.agents.chapter_writer import ChapterWriterAgent
+        from musequill.agents.chapter_writer.chapter_writer_agent import ChapterWriterAgent
         
         # Create chapter writer instance
         writer = ChapterWriterAgent()
         
-        # Write the current chapter
-        writing_results = writer.write_chapter(state)
+        # Get current chapter status
+        current_chapter_num = state['current_chapter']
+        total_chapters = len(state['chapters'])
         
-        # Update state with writing results
+        logger.info(f"Writing chapter {current_chapter_num + 1} of {total_chapters}")
+        
+        # Check if all chapters are complete
+        if current_chapter_num >= total_chapters:
+            logger.info(f"All chapters completed for book {state['book_id']}")
+            updated_state = state.copy()
+            updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE
+            updated_state['writing_completed_at'] = datetime.now(timezone.utc).isoformat()
+            updated_state['progress_percentage'] = 90.0  # Ready for quality review
+            return updated_state
+        
+        # Write the next chapter
+        writing_result = writer.write_next_chapter(state)
+        
+        # Update state based on writing result
         updated_state = state.copy()
-        updated_state['chapters'] = writing_results['updated_chapters']
-        updated_state['current_chapter'] = writing_results['next_chapter']
-        updated_state['total_word_count'] = writing_results['total_word_count']
-        updated_state['current_stage'] = ProcessingStage.WRITING
         
-        # Calculate progress based on chapters completed
-        chapters_completed = sum(1 for ch in updated_state['chapters'] if ch['status'] == 'complete')
-        total_chapters = len(updated_state['chapters'])
-        chapter_progress = (chapters_completed / total_chapters) * 40  # 40% of total progress for writing
-        updated_state['progress_percentage'] = 50.0 + chapter_progress
-        
-        logger.info(f"Chapter {state['current_chapter'] + 1} completed for book {state['book_id']}, {chapters_completed}/{total_chapters} chapters done")
+        if writing_result['status'] == 'success':
+            # Update the chapter in the state
+            chapter_index = writing_result['chapter_number'] - 1
+            updated_state['chapters'][chapter_index] = writing_result['updated_chapter']
+            
+            # Update overall state
+            updated_state['current_chapter'] = current_chapter_num + 1
+            updated_state['total_word_count'] += writing_result['words_written']
+            updated_state['current_stage'] = ProcessingStage.WRITING
+            
+            # Calculate progress (50% base + 40% for writing completion)
+            writing_progress = (current_chapter_num + 1) / total_chapters * 40
+            updated_state['progress_percentage'] = 50.0 + writing_progress
+            
+            # Update writing started timestamp if this is the first chapter
+            if current_chapter_num == 0 and not state.get('writing_started_at'):
+                updated_state['writing_started_at'] = datetime.now(timezone.utc).isoformat()
+            
+            logger.info(f"Successfully wrote Chapter {writing_result['chapter_number']} for book {state['book_id']}")
+            
+        elif writing_result['status'] == 'complete':
+            # All chapters are done
+            updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE
+            updated_state['writing_completed_at'] = datetime.now(timezone.utc).isoformat()
+            updated_state['progress_percentage'] = 90.0
+            logger.info(f"Chapter writing phase completed for book {state['book_id']}")
+            
+        else:
+            # Handle writing error
+            error_message = writing_result.get('error_message', 'Unknown chapter writing error')
+            retry_count = writing_result.get('retry_count', 0)
+            
+            if retry_count < writer.config.max_retry_attempts:
+                # Retry the chapter
+                logger.warning(f"Chapter {current_chapter_num + 1} failed, will retry. Error: {error_message}")
+                
+                retry_result = writer.retry_failed_chapter(state, current_chapter_num + 1, retry_count)
+                
+                if retry_result['status'] == 'success':
+                    # Update with retry success
+                    chapter_index = retry_result['chapter_number'] - 1
+                    updated_state['chapters'][chapter_index] = retry_result['updated_chapter']
+                    updated_state['current_chapter'] = current_chapter_num + 1
+                    updated_state['total_word_count'] += retry_result['updated_chapter'].get('word_count', 0)
+                    
+                    # Calculate progress
+                    writing_progress = (current_chapter_num + 1) / total_chapters * 40
+                    updated_state['progress_percentage'] = 50.0 + writing_progress
+                    
+                    logger.info(f"Chapter {retry_result['chapter_number']} completed on retry for book {state['book_id']}")
+                else:
+                    # Retry also failed
+                    updated_state['errors'].append(f"Chapter {current_chapter_num + 1} writing failed after {retry_count + 1} attempts: {error_message}")
+                    updated_state['retry_count'] = retry_count + 1
+                    updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
+                    
+                    # If max retries exceeded, mark as failed
+                    if retry_count >= writer.config.max_retry_attempts - 1:
+                        updated_state['current_stage'] = ProcessingStage.FAILED
+                        logger.error(f"Chapter writing failed for book {state['book_id']} after maximum retries")
+            else:
+                # Max retries exceeded
+                updated_state['errors'].append(f"Chapter writing failed: {error_message}")
+                updated_state['current_stage'] = ProcessingStage.FAILED
+                logger.error(f"Chapter writing failed for book {state['book_id']}: {error_message}")
         
         return updated_state
         
     except Exception as e:
         logger.error(f"Error in chapter writing for book {state['book_id']}: {e}")
         updated_state = state.copy()
-        updated_state['errors'].append(f"Chapter writing failed: {str(e)}")
+        updated_state['errors'].append(f"Chapter writing node failed: {str(e)}")
         updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
         return updated_state
+
+
+from datetime import datetime, timezone
+from typing import Literal
+from musequill.config.logging import get_logger
+from musequill.agents.agent_state import BookWritingState, ProcessingStage
+
+logger = get_logger(__name__)
 
 
 def quality_review_node(state: BookWritingState) -> BookWritingState:
@@ -253,38 +331,208 @@ def quality_review_node(state: BookWritingState) -> BookWritingState:
         logger.info(f"Starting quality review for book {state['book_id']}")
         
         # Import here to avoid circular imports
-        from musequill.agents.quality_reviewer import QualityReviewerAgent
+        from musequill.agents.quality_reviewer.quality_reviewer_agent import QualityReviewerAgent
         
         # Create quality reviewer instance
         reviewer = QualityReviewerAgent()
         
-        # Review the book quality
-        review_results = reviewer.review_book(state)
+        # Validate that we have completed chapters to review
+        completed_chapters = [ch for ch in state['chapters'] if ch.get('status') == 'complete' and ch.get('content')]
         
-        # Update state with review results
+        if not completed_chapters:
+            logger.error(f"No completed chapters found for quality review of book {state['book_id']}")
+            updated_state = state.copy()
+            updated_state['errors'].append("No completed chapters available for quality review")
+            updated_state['current_stage'] = ProcessingStage.FAILED
+            return updated_state
+        
+        logger.info(f"Reviewing {len(completed_chapters)} completed chapters for book {state['book_id']}")
+        
+        # Conduct comprehensive quality review
+        review_results = reviewer.review_book_quality(state)
+        
+        # Update state based on review results
         updated_state = state.copy()
-        updated_state['current_stage'] = ProcessingStage.REVIEW
-        updated_state['quality_score'] = review_results['quality_score']
-        updated_state['review_notes'] = review_results['review_notes']
-        updated_state['progress_percentage'] = 95.0
         
-        # Check if revisions are needed
-        if review_results['needs_revision']:
-            updated_state['revision_count'] += 1
-            updated_state['chapters'] = review_results['revised_chapters']
-            logger.info(f"Quality review for book {state['book_id']} requires revisions (revision #{updated_state['revision_count']})")
+        if review_results['status'] == 'success':
+            # Update state with review results
+            updated_state['quality_score'] = review_results['overall_quality_score']
+            updated_state['current_stage'] = ProcessingStage.REVIEW
+            
+            # Store detailed review information
+            if 'review_notes' not in updated_state:
+                updated_state['review_notes'] = []
+            
+            # Add review summary to notes
+            review_summary = (
+                f"Quality Review Complete - Score: {review_results['overall_quality_score']:.2f}/1.0, "
+                f"Meets Threshold: {review_results['meets_quality_threshold']}, "
+                f"Requires Revision: {review_results['requires_revision']}"
+            )
+            updated_state['review_notes'].append(review_summary)
+            
+            # Add detailed feedback if available
+            if review_results.get('assessment_summary'):
+                updated_state['review_notes'].append(f"Assessment: {review_results['assessment_summary']}")
+            
+            # Store quality assessment metadata
+            updated_state['metadata']['quality_review'] = {
+                'overall_score': review_results['overall_quality_score'],
+                'meets_threshold': review_results['meets_quality_threshold'],
+                'requires_revision': review_results['requires_revision'],
+                'revision_urgency': review_results.get('revision_urgency', 'medium'),
+                'approval_recommendation': review_results['approval_recommendation'],
+                'review_date': review_results['quality_assessment'].created_at,
+                'chapters_reviewed': len(review_results['chapter_metrics']),
+                'consistency_score': review_results['consistency_metrics']['overall_consistency_score'],
+                'priority_revision_areas': review_results.get('priority_revision_areas', [])
+            }
+            
+            # Determine next steps based on review outcome
+            if review_results['requires_revision']:
+                # Book requires revision
+                logger.info(f"Book {state['book_id']} requires revision - Score: {review_results['overall_quality_score']:.2f}, Urgency: {review_results.get('revision_urgency', 'medium')}")
+                
+                # Check revision count limits
+                current_revisions = updated_state.get('revision_count', 0)
+                max_revisions = 3  # Could be configurable
+                
+                if current_revisions >= max_revisions:
+                    # Maximum revisions reached
+                    logger.warning(f"Book {state['book_id']} reached maximum revisions ({max_revisions})")
+                    
+                    if review_results['approval_recommendation'] == 'escalate_to_human_review':
+                        updated_state['current_stage'] = ProcessingStage.FAILED
+                        updated_state['errors'].append(f"Quality review failed after {max_revisions} revision cycles - human review required")
+                        updated_state['review_notes'].append("ESCALATED: Maximum revisions reached - requires human intervention")
+                    else:
+                        # Proceed to final assembly despite quality issues
+                        updated_state['current_stage'] = ProcessingStage.REVIEW
+                        updated_state['review_notes'].append("ACCEPTED: Proceeding despite quality concerns due to revision limit")
+                        logger.info(f"Accepting book {state['book_id']} despite quality concerns - revision limit reached")
+                
+                else:
+                    # Set up for revision cycle
+                    updated_state['revision_count'] = current_revisions + 1
+                    updated_state['current_stage'] = ProcessingStage.REVIEW
+                    
+                    # Store revision guidance
+                    revision_guidance = {
+                        'revision_strategy': review_results.get('revision_strategy', 'General quality improvement needed'),
+                        'priority_areas': review_results.get('priority_revision_areas', []),
+                        'expected_improvements': review_results['quality_assessment'].revision_priority_areas,
+                        'urgency': review_results.get('revision_urgency', 'medium'),
+                        'detailed_feedback': review_results.get('detailed_feedback', '')
+                    }
+                    updated_state['metadata']['revision_guidance'] = revision_guidance
+                    
+                    # Add specific revision notes
+                    updated_state['review_notes'].append(f"REVISION REQUIRED: Cycle {current_revisions + 1}/{max_revisions}")
+                    updated_state['review_notes'].append(f"Priority Areas: {', '.join(review_results.get('priority_revision_areas', []))}")
+                    
+                    logger.info(f"Book {state['book_id']} scheduled for revision cycle {current_revisions + 1}")
+            
+            else:
+                # Book approved - proceed to final assembly
+                logger.info(f"Book {state['book_id']} approved - Quality score: {review_results['overall_quality_score']:.2f}")
+                updated_state['current_stage'] = ProcessingStage.REVIEW
+                updated_state['review_notes'].append("APPROVED: Quality review passed - proceeding to final assembly")
+            
+            # Update progress
+            if updated_state['current_stage'] == ProcessingStage.REVIEW:
+                updated_state['progress_percentage'] = 95.0  # Near completion
+            
+            logger.info(f"Quality review completed for book {state['book_id']} - Status: {updated_state['current_stage']}")
+            
         else:
-            updated_state['writing_completed_at'] = review_results['completed_at']
-            logger.info(f"Quality review passed for book {state['book_id']}, quality score: {review_results['quality_score']}")
+            # Review process failed
+            error_message = review_results.get('error_message', 'Unknown quality review error')
+            logger.error(f"Quality review failed for book {state['book_id']}: {error_message}")
+            
+            updated_state['errors'].append(f"Quality review failed: {error_message}")
+            updated_state['current_stage'] = ProcessingStage.FAILED
+            updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
+            
+            # Add fallback review notes
+            updated_state['review_notes'] = updated_state.get('review_notes', [])
+            updated_state['review_notes'].append("ERROR: Quality review process failed - manual review required")
         
         return updated_state
         
     except Exception as e:
         logger.error(f"Error in quality review for book {state['book_id']}: {e}")
         updated_state = state.copy()
-        updated_state['errors'].append(f"Quality review failed: {str(e)}")
+        updated_state['errors'].append(f"Quality review node failed: {str(e)}")
         updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
+        
+        # Add emergency review notes
+        updated_state['review_notes'] = updated_state.get('review_notes', [])
+        updated_state['review_notes'].append("CRITICAL ERROR: Quality review system failure - immediate manual intervention required")
+        
         return updated_state
+
+
+def should_revise_or_complete(state: BookWritingState) -> Literal["chapter_writer", "final_assembler"]:
+    """
+    Determine if revisions are needed or if we can proceed to final assembly.
+    This function is used by the orchestrator to route after quality review.
+    """
+    try:
+        # Check if we're in review stage and have review results
+        if state['current_stage'] != ProcessingStage.REVIEW:
+            logger.warning(f"Unexpected stage for revision decision: {state['current_stage']}")
+            return "final_assembler"
+        
+        # Check revision guidance in metadata
+        revision_guidance = state.get('metadata', {}).get('revision_guidance')
+        quality_review = state.get('metadata', {}).get('quality_review')
+        
+        # If we have explicit revision guidance, use it
+        if revision_guidance:
+            priority_areas = revision_guidance.get('priority_areas', [])
+            urgency = revision_guidance.get('urgency', 'medium')
+            
+            logger.info(f"Book {state['book_id']} revision decision - Priority areas: {priority_areas}, Urgency: {urgency}")
+            
+            # If there are priority areas that need revision, go back to chapter writer
+            if priority_areas and urgency in ['high', 'critical', 'medium']:
+                logger.info(f"Routing book {state['book_id']} back to chapter writer for revision")
+                return "chapter_writer"
+        
+        # Check quality score threshold
+        quality_score = state.get('quality_score', 0.0)
+        quality_threshold = 0.8  # Could be configurable
+        
+        if quality_score < quality_threshold:
+            # Check revision count to avoid infinite loops
+            revision_count = state.get('revision_count', 0)
+            max_revisions = 3  # Could be configurable
+            
+            if revision_count < max_revisions:
+                logger.info(f"Book {state['book_id']} quality score {quality_score:.2f} below threshold {quality_threshold} - routing for revision")
+                return "chapter_writer"
+            else:
+                logger.warning(f"Book {state['book_id']} reached max revisions ({max_revisions}) - proceeding to final assembly")
+        
+        # Check review notes for explicit revision requirements
+        review_notes = state.get('review_notes', [])
+        if any('REVISION REQUIRED' in note for note in review_notes):
+            revision_count = state.get('revision_count', 0)
+            max_revisions = 3
+            
+            if revision_count < max_revisions:
+                logger.info(f"Book {state['book_id']} has explicit revision requirement - routing to chapter writer")
+                return "chapter_writer"
+        
+        # Default to final assembly
+        logger.info(f"Book {state['book_id']} approved for final assembly - Quality score: {quality_score:.2f}")
+        return "final_assembler"
+        
+    except Exception as e:
+        logger.error(f"Error in revision decision for book {state['book_id']}: {e}")
+        # Default to final assembly in case of error
+        return "final_assembler"
 
 
 def final_assembly_node(state: BookWritingState) -> BookWritingState:
