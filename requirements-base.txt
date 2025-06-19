@@ -40,3 +40,10 @@ aiofiles>=23.2.0
 python-multipart>=0.0.9
 python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
+
+# Book formatting
+ebooklib>=0.19 
+lxml>=5.4.0 
+pillow>=11.2.1 
+pypandoc>=1.15 
+reportlab>=4.4.2
