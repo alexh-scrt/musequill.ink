@@ -48,6 +48,7 @@ class BookPipelineMonitor:
         self.database_name = _config.database_name
         self.database_username = _config.database_username
         self.database_password = _config.database_password
+        self.auth_database = _config.auth_database
         self.collection_name = _config.collection_name
         self.redis_url = _config.redis_url
         self.queue_name = _config.queue_name
@@ -102,10 +103,10 @@ class BookPipelineMonitor:
         try:
             # Build MongoDB connection URL with authentication if credentials are provided
             if self.database_username and self.database_password:
-                # Parse the URL to insert credentials
+                # Parse the URL to insert credentials with authSource
                 if "://" in self.mongodb_url:
                     protocol, rest = self.mongodb_url.split("://", 1)
-                    mongodb_url = f"{protocol}://{self.database_username}:{self.database_password}@{rest}"
+                    mongodb_url = f"{protocol}://{self.database_username}:{self.database_password}@{rest}?authSource={self.auth_database}"
                 else:
                     mongodb_url = self.mongodb_url
             else:
