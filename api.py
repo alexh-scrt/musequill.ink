@@ -2,8 +2,8 @@
 Book Planner Backend API - Enhanced Version
 FastAPI server providing enum data and book creation endpoints with proper metadata
 """
+
 import time
-import logging
 import traceback
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -11,6 +11,8 @@ from uuid import UUID, uuid4
 from pathlib import Path
 import uvicorn
 import argparse
+import atexit
+
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.exceptions import RequestValidationError
@@ -87,7 +89,12 @@ from musequill.models.word_count import WORD_COUNT_MAPPING
 from musequill.database import book as book_db
 from musequill.core.openai_client.client import get_openai_client
 from musequill.api.model import book_request_to_book_data
-
+from musequill.monitors.service_manager import (
+    get_monitor_service_manager,
+    start_monitoring_services,
+    stop_monitoring_services,
+    get_monitoring_status
+)
 
 # Get logger and test
 logger = get_logger(__name__)
@@ -98,6 +105,254 @@ app = FastAPI(
     description="API for book parameter selection and AI-assisted book planning",
     version="0.1.0"
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Application startup event handler.
+    
+    This is where we initialize and start all monitoring services.
+    """
+    global monitor_manager
+    
+    logger.info("🚀 Starting MuseQuill API application...")
+    
+    try:
+        # Initialize monitor service manager
+        monitor_manager = get_monitor_service_manager()
+        
+        # Start all monitoring services
+        logger.info("📊 Starting monitoring services...")
+        success = start_monitoring_services()
+        
+        if success:
+            logger.info("✅ All monitoring services started successfully")
+            
+            # Log service status
+            status = get_monitoring_status()
+            logger.info(f"📈 Monitor Status: {status['health']} - "
+                       f"{status['running_services']}/{status['total_services']} services running")
+        else:
+            logger.warning("⚠️ Some monitoring services failed to start")
+            
+    except Exception as e:
+        logger.error(f"❌ Failed to start monitoring services: {e}")
+        logger.error(traceback.format_exc())
+        # Don't fail the entire application startup for monitoring issues
+        # The API can still function without monitors, though with reduced functionality
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Application shutdown event handler.
+    
+    Gracefully stops all monitoring services.
+    """
+    global monitor_manager
+    
+    logger.info("🛑 Shutting down MuseQuill API application...")
+    
+    try:
+        if monitor_manager:
+            logger.info("📊 Stopping monitoring services...")
+            stop_monitoring_services(timeout=30.0)
+            logger.info("✅ Monitoring services stopped successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ Error during shutdown: {e}")
+        logger.error(traceback.format_exc())
+
+
+# Add monitoring status endpoints
+@app.get("/api/monitoring/status")
+async def get_monitor_status():
+    """
+    Get status of all monitoring services.
+    
+    Returns:
+        Dict containing comprehensive status information
+    """
+    try:
+        status = get_monitoring_status()
+        return {
+            "success": True,
+            "monitoring": status,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Failed to get monitoring status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/monitoring/health")
+async def monitor_health_check():
+    """
+    Perform health check on all monitoring services.
+    
+    Returns:
+        Dict containing health check results
+    """
+    try:
+        if monitor_manager:
+            health = monitor_manager.health_check()
+            
+            # Set appropriate HTTP status based on health
+            status_code = 200
+            if health['overall_status'] == 'unhealthy':
+                status_code = 503  # Service Unavailable
+            elif health['overall_status'] == 'degraded':
+                status_code = 200  # OK but with warnings
+            
+            return JSONResponse(
+                status_code=status_code,
+                content={
+                    "success": True,
+                    "health": health,
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+        else:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "success": False,
+                    "error": "Monitor manager not initialized",
+                    "timestamp": datetime.now().isoformat()
+                }
+            )
+            
+    except Exception as e:
+        logger.error(f"Monitor health check failed: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e),
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+
+
+@app.post("/api/monitoring/restart/{service_name}")
+async def restart_monitoring_service(service_name: str):
+    """
+    Restart a specific monitoring service.
+    
+    Args:
+        service_name: Name of the service to restart (book_retriever, book_monitor)
+    
+    Returns:
+        Dict containing restart result
+    """
+    try:
+        if not monitor_manager:
+            raise HTTPException(status_code=503, detail="Monitor manager not initialized")
+        
+        success = monitor_manager.restart_service(service_name)
+        
+        if success:
+            return {
+                "success": True,
+                "message": f"Service '{service_name}' restarted successfully",
+                "timestamp": datetime.now().isoformat()
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to restart service '{service_name}'"
+            )
+            
+    except Exception as e:
+        logger.error(f"Failed to restart service {service_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Enhanced health check that includes monitoring
+@app.get("/api/health")
+async def enhanced_health_check(
+    factory: AgentFactory = Depends(get_agent_factory_dependency)
+) -> Dict[str, Any]:
+    """Enhanced health check including agent system and monitoring services."""
+    
+    try:
+        # Get agent system health
+        agent_health = await factory.health_check()
+        books = book_db.list_books()
+        
+        # Get monitoring health
+        monitor_health = None
+        if monitor_manager:
+            monitor_health = monitor_manager.health_check()
+        
+        health_response = {
+            "status": "healthy",
+            "service": "musequill-book-planner-api",
+            "version": "2.0.0",
+            "timestamp": datetime.now().isoformat(),
+            
+            # Database status
+            "books_created": len(books),
+            "database_healthy": True,
+            
+            # Agent system status
+            "agent_system": {
+                "healthy": agent_health["factory_healthy"],
+                "total_agents": agent_health["total_agents"],
+                "healthy_agents": agent_health["healthy_agents"],
+                "factory_uptime": agent_health["factory_uptime_seconds"]
+            },
+            
+            # Monitoring system status
+            "monitoring_system": {
+                "enabled": monitor_manager is not None,
+                "healthy": monitor_health['overall_status'] == 'healthy' if monitor_health else False,
+                "running_services": monitor_health['healthy_services'] if monitor_health else 0,
+                "total_services": monitor_health['total_services'] if monitor_health else 0,
+                "status": monitor_health['overall_status'] if monitor_health else 'disabled'
+            },
+            
+            # API features
+            "features": {
+                "book_creation": True,
+                "ai_planning": True,
+                "agent_management": True,
+                "background_processing": True,
+                "book_retrieval_monitoring": monitor_manager is not None,
+                "pipeline_monitoring": monitor_manager is not None
+            },
+            
+            # Enum system
+            "enums_available": len([
+                GenreType, BookLength, StoryStructure, PlotType,
+                NarrativePOV, PacingType, ConflictType, CharacterRole,
+                CharacterArchetype, WorldType, MagicSystemType, TechnologyLevel,
+                WritingStyle, ToneType, AgeGroup, AudienceType, ReadingLevel,
+                PublicationRoute, ContentWarning, AIAssistanceLevel,
+                ResearchPriority, WritingSchedule
+            ])
+        }
+        
+        # Set overall status based on components
+        if not agent_health["factory_healthy"]:
+            health_response["status"] = "unhealthy"
+        elif monitor_health and monitor_health['overall_status'] == 'unhealthy':
+            health_response["status"] = "degraded"
+        elif monitor_health and monitor_health['overall_status'] == 'degraded':
+            health_response["status"] = "degraded"
+        
+        return health_response
+        
+    except Exception as e:
+        logger.error("Health check failed", error=str(e))
+        return {
+            "status": "unhealthy",
+            "service": "musequill-book-planner-api",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 
 # Add request logging middleware
 @app.middleware("http")
@@ -126,6 +381,7 @@ async def log_requests(request: Request, call_next):
     
     return response
 
+
 # CORS middleware for frontend development
 app.add_middleware(
     CORSMiddleware,
@@ -135,11 +391,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static files (our HTML frontend)
+# Serve static files
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
-
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
 
 def get_agent_factory_dependency(
     openai_client: OpenAIClient = Depends(get_openai_client)
@@ -147,7 +403,8 @@ def get_agent_factory_dependency(
     """Get agent factory instance."""
     return get_agent_factory(openai_client)
 
-# Enhanced exception handlers
+
+# Exception handlers
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle Pydantic validation errors with detailed logging."""
@@ -176,18 +433,48 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
+
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
     """Handle value errors with logging."""
-    logger.error(f"Value error for {request.method} {request.url}: {str(exc)}")
+    logger.error(f"Value error for {request.method} {request.url}: {exc}")
     return JSONResponse(
         status_code=400,
         content={
             "detail": "Invalid Value",
             "message": str(exc),
-            "request_id": id(request)
+            "timestamp": datetime.now().isoformat()
         }
     )
+
+
+# Include existing routers
+app.include_router(planning_router, prefix="/api/v1")
+
+
+
+
+
+
+
+# CORS middleware for frontend development
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:5500"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve static files (our HTML frontend)
+static_dir = Path(__file__).parent / "static"
+static_dir.mkdir(exist_ok=True)
+
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+
+
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
@@ -811,35 +1098,41 @@ async def health_check(
         }
 
 
-# Add this to your existing FastAPI app setup
 def setup_agent_routes(app: FastAPI) -> None:
     """Setup agent-related routes."""
-    
-    # Import and include planning routes
+    # Include planning routes
     app.include_router(planning_router, prefix="/api/v1")
-    
     logger.info("Agent routes configured successfully")
 
 
 # Call this when setting up your FastAPI app
 setup_agent_routes(app)
 
+
 def run():
+    """Run the FastAPI application with enhanced monitoring."""
     # Command line argument parsing
-    parser = argparse.ArgumentParser(description='MuseQuill Book Planner API')
+    parser = argparse.ArgumentParser(description='MuseQuill Book Planner API with Monitoring')
     parser.add_argument('--host', default='127.0.0.1', help='Host to bind to')
     parser.add_argument('--port', type=int, default=8055, help='Port to bind to')
     parser.add_argument('--reload', action='store_true', help='Enable auto-reload')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     parser.add_argument('--log-level', default='DEBUG', help='Log level')
+    parser.add_argument('--disable-monitors', action='store_true', 
+                       help='Disable monitoring services (for testing)')
     
     args = parser.parse_args()
+        
+    # Register global shutdown handler
+    def global_shutdown():
+        """Global shutdown handler."""
+        logger.info("Application shutdown initiated...")
+        try:
+            stop_monitoring_services(timeout=10.0)
+        except Exception as e:
+            logger.error(f"Error during global shutdown: {e}")
     
-    # Set log level based on arguments
-    if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logging.getLogger("uvicorn").setLevel(logging.DEBUG)
-        logging.getLogger("fastapi").setLevel(logging.DEBUG)
+    atexit.register(global_shutdown)
     
     logger.info("🚀 Starting MuseQuill Book Planner API server...")
     logger.info(f"🌐 API Server: http://{args.host}:{args.port}")
@@ -847,10 +1140,17 @@ def run():
     logger.info(f"🔧 API docs: http://{args.host}:{args.port}/docs")
     logger.info(f"💾 Dashboard: http://{args.host}:{args.port}/dashboard")
     logger.info(f"🐛 Debug endpoint: http://{args.host}:{args.port}/api/debug/book-data")
+    logger.info("📊 Monitoring endpoints:")
+    logger.info(f"   - GET http://{args.host}:{args.port}/api/monitoring/status")
+    logger.info(f"   - GET http://{args.host}:{args.port}/api/monitoring/health")
+    logger.info(f"   - POST http://{args.host}:{args.port}/api/monitoring/restart/{{service_name}}")
     logger.info("📊 API endpoints:")
     logger.info(f"   - GET http://{args.host}:{args.port}/api/enums")
     logger.info(f"   - GET http://{args.host}:{args.port}/api/recommendations/{{genre}}")
     logger.info(f"   - POST http://{args.host}:{args.port}/api/books/create")
+    
+    if args.disable_monitors:
+        logger.warning("⚠️ Monitoring services are DISABLED for this session")
     
     # Run the server
     uvicorn.run(
