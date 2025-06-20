@@ -551,7 +551,7 @@ def final_assembly_node(state: BookWritingState) -> BookWritingState:
         assembler = FinalAssemblerAgent()
         
         # Assemble the final book
-        assembly_results = assembler.assemble_book(state)
+        assembly_results = assembler.assemble_final_book(state)
         
         # Update state with final book content
         updated_state = state.copy()
@@ -789,11 +789,11 @@ def main():
         memory = MemorySaver()
         
         # Create the orchestration graph
-        graph = create_book_writing_graph(memory)
+        graph:StateGraph = create_book_writing_graph(memory)
         
         print("Graph created successfully!")
         print("Graph nodes:", list(graph.nodes.keys()))
-        print("Graph edges:", list(graph.edges))
+        #print("Graph edges:", graph.edges)
         
         # Test configuration
         thread_config = {"configurable": {"thread_id": "test_thread_789"}}

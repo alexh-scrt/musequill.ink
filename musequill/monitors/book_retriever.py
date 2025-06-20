@@ -690,7 +690,7 @@ class BookRetriever:
                 logger.warning(f"{len(self.active_orchestrations)} orchestrations still active after timeout")
         
         # Shutdown executor
-        self.executor.shutdown(wait=True, timeout=10)
+        self.executor.shutdown(wait=True)
         
         # Wait for the retriever thread to finish
         if self.retriever_thread and self.retriever_thread.is_alive():
