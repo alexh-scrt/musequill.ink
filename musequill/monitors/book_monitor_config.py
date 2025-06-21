@@ -54,7 +54,7 @@ class BookMonitorConfig(BaseSettings):
     
     # Monitor settings
     poll_interval: int = Field(
-        default=10,
+        default=3600,
         validation_alias="BOOK_POLL_INTERVAL",
         description="Polling interval in seconds",
         ge=1,

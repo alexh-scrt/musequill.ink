@@ -12,7 +12,7 @@ from pathlib import Path
 import uvicorn
 import argparse
 import atexit
-
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
 from fastapi.exceptions import RequestValidationError
@@ -90,6 +90,7 @@ from musequill.database import book as book_db
 from musequill.core.openai_client.client import get_openai_client
 from musequill.api.model import book_request_to_book_data
 from musequill.monitors.service_manager import (
+    MonitorServiceManager,
     get_monitor_service_manager,
     start_monitoring_services,
     stop_monitoring_services,
@@ -99,15 +100,28 @@ from musequill.monitors.service_manager import (
 # Get logger and test
 logger = get_logger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup sequence
+    logger.info("🚀 Starting MuseQuill...")
+    await startup_event()
+    yield
+    # shutdown sequence
+    logger.info("🛑 Shutting down MuseQuill...")
+    await shutdown_event()
+
+
 # FastAPI application
 app = FastAPI(
     title="MuseQuill Book Planner API",
     description="API for book parameter selection and AI-assisted book planning",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
+monitor_manager: Optional[MonitorServiceManager] = None
 
-@app.on_event("startup")
+#@app.on_event("startup")
 async def startup_event():
     """
     Application startup event handler.
@@ -143,14 +157,13 @@ async def startup_event():
         # The API can still function without monitors, though with reduced functionality
 
 
-@app.on_event("shutdown")
+#@app.on_event("shutdown")
 async def shutdown_event():
     """
     Application shutdown event handler.
     
     Gracefully stops all monitoring services.
     """
-    global monitor_manager
     
     logger.info("🛑 Shutting down MuseQuill API application...")
     
