@@ -61,6 +61,7 @@ class BookRetriever:
         self.active_orchestrations: Set[str] = set()
         self.orchestration_futures: Dict[str, Any] = {}
         self.executor = ThreadPoolExecutor(max_workers=self.config.max_concurrent_orchestrations)
+        self.event_loop: Optional[asyncio.AbstractEventLoop] = None
         
         # Statistics tracking
         self.stats = {
@@ -195,33 +196,52 @@ class BookRetriever:
         if 'book_id' not in normalized and '_id' in normalized:
             normalized['book_id'] = str(normalized['_id'])
         
-        # Fill in missing optional fields with defaults
-        if not normalized.get('genre'):
+        # Fill in missing optional fields with defaults using actual book structure
+        if not normalized.get('genre_info'):
             normalized['genre'] = self.config.default_genre
+        else:
+            # Extract genre from genre_info if available
+            normalized['genre'] = normalized['genre_info'].get('genre', self.config.default_genre)
         
-        if not normalized.get('target_word_count'):
+        # Use estimated_word_count from book, not target_word_count
+        if not normalized.get('estimated_word_count'):
             normalized['target_word_count'] = self.config.default_target_length
+        else:
+            normalized['target_word_count'] = normalized['estimated_word_count']
         
+        # Set target_audience based on audience_info
         if not normalized.get('target_audience'):
-            normalized['target_audience'] = "General audience"
+            if normalized.get('audience_info'):
+                audience_info = normalized['audience_info']
+                age_group = audience_info.get('age_group', '')
+                audience_type = audience_info.get('audience_type', '')
+                normalized['target_audience'] = f"{age_group} - {audience_type}" if age_group and audience_type else "General audience"
+            else:
+                normalized['target_audience'] = "General audience"
         
-        # Normalize outline and create chapters
+        # Create outline from planning_results if available
         if not normalized.get('outline'):
-            normalized['outline'] = {}
+            if normalized.get('planning_results') and normalized['planning_results'].get('story_outline'):
+                normalized['outline'] = normalized['planning_results']['story_outline']
+            else:
+                normalized['outline'] = {}
         
         # Extract or create chapter information
         chapters = []
-        outline = normalized.get('outline', {})
         
-        if 'chapters' in outline and isinstance(outline['chapters'], list):
-            # Use existing chapter structure
-            for i, chapter_data in enumerate(outline['chapters']):
+        # Check if we have chapter structure from planning_results
+        if (normalized.get('planning_results') and 
+            normalized['planning_results'].get('chapter_structure') and
+            isinstance(normalized['planning_results']['chapter_structure'], list)):
+            
+            chapter_structure = normalized['planning_results']['chapter_structure']
+            for i, chapter_data in enumerate(chapter_structure):
                 chapter = Chapter(
                     chapter_number=i + 1,
                     title=chapter_data.get('title', f"Chapter {i + 1}"),
                     description=chapter_data.get('description', ''),
                     target_word_count=chapter_data.get('target_word_count', 
-                                                     normalized['target_word_count'] // len(outline['chapters'])),
+                                                     normalized['target_word_count'] // len(chapter_structure)),
                     status="planned",
                     content=None,
                     research_chunks_used=None,
@@ -230,10 +250,30 @@ class BookRetriever:
                     completed_at=None
                 )
                 chapters.append(chapter)
+        elif normalized.get('outline') and 'chapters' in normalized['outline']:
+            # Fallback to outline chapters if available
+            outline_chapters = normalized['outline']['chapters']
+            if isinstance(outline_chapters, list):
+                for i, chapter_data in enumerate(outline_chapters):
+                    chapter = Chapter(
+                        chapter_number=i + 1,
+                        title=chapter_data.get('title', f"Chapter {i + 1}"),
+                        description=chapter_data.get('description', ''),
+                        target_word_count=chapter_data.get('target_word_count', 
+                                                         normalized['target_word_count'] // len(outline_chapters)),
+                        status="planned",
+                        content=None,
+                        research_chunks_used=None,
+                        word_count=None,
+                        created_at=None,
+                        completed_at=None
+                    )
+                    chapters.append(chapter)
         else:
-            # Create default chapters
-            words_per_chapter = normalized['target_word_count'] // self.config.default_chapter_count
-            for i in range(self.config.default_chapter_count):
+            # Create default chapters based on estimated_chapters if available
+            chapter_count = normalized.get('estimated_chapters', self.config.default_chapter_count)
+            words_per_chapter = normalized['target_word_count'] // chapter_count
+            for i in range(chapter_count):
                 chapter = Chapter(
                     chapter_number=i + 1,
                     title=f"Chapter {i + 1}",
@@ -270,6 +310,15 @@ class BookRetriever:
         thread_id = f"thread_{book['book_id']}_{uuid4().hex[:8]}"
         current_time = datetime.now(timezone.utc).isoformat()
         
+        # Extract author preferences from various sources
+        author_preferences = {}
+        if book.get('additional_notes'):
+            author_preferences['notes'] = book['additional_notes']
+        if book.get('style_info'):
+            author_preferences['style'] = book['style_info']
+        if book.get('process_info'):
+            author_preferences['process'] = book['process_info']
+        
         state = BookWritingState(
             # Book Identification
             book_id=str(book['book_id']),
@@ -282,7 +331,7 @@ class BookRetriever:
             genre=book['genre'],
             target_word_count=book['target_word_count'],
             target_audience=book.get('target_audience'),
-            author_preferences=book.get('author_preferences', {}),
+            author_preferences=author_preferences,
             
             # Planning Information
             outline=book['outline'],
@@ -309,16 +358,16 @@ class BookRetriever:
             
             # Quality Control
             review_notes=None,
-            revision_count=0,
+            revision_count=book.get('retry_count', 0),
             quality_score=None,
             
             # Error Handling
             errors=[],
-            retry_count=0,
+            retry_count=book.get('retry_count', 0),
             last_error_at=None,
             
             # Progress Tracking
-            progress_percentage=0.0,
+            progress_percentage=book.get('completion_percentage', 0.0),
             estimated_completion_time=None,
             
             # Final Output
@@ -326,7 +375,10 @@ class BookRetriever:
             metadata={
                 'retriever_processed_at': current_time,
                 'original_book_data': book,
-                'processing_node': 'book_retriever'
+                'processing_node': 'book_retriever',
+                'book_status': book.get('status'),
+                'planning_status': book.get('planning_status'),
+                'writing_status': book.get('writing_status')
             }
         )
         
@@ -412,11 +464,15 @@ class BookRetriever:
             logger.info(f"Running orchestration {orchestration_id} for book {state['book_id']}")
             
             # Update book status in MongoDB
-            asyncio.create_task(self._update_book_status(
-                state['book_id'], 
-                "processing", 
-                {"orchestration_id": orchestration_id, "stage": "started"}
-            ))
+            if self.event_loop and not self.event_loop.is_closed():
+                asyncio.run_coroutine_threadsafe(
+                    self._update_book_status(
+                        state['book_id'], 
+                        "processing", 
+                        {"orchestration_id": orchestration_id, "stage": "started"}
+                    ),
+                    self.event_loop
+                )
             
             # Run the orchestration
             result = graph.invoke(state, thread_config)
@@ -426,11 +482,15 @@ class BookRetriever:
             self.stats['orchestrations_completed'] += 1
             
             # Update book status
-            asyncio.create_task(self._update_book_status(
-                state['book_id'],
-                "completed",
-                {"completed_at": datetime.now(timezone.utc).isoformat()}
-            ))
+            if self.event_loop and not self.event_loop.is_closed():
+                asyncio.run_coroutine_threadsafe(
+                    self._update_book_status(
+                        state['book_id'],
+                        "completed",
+                        {"completed_at": datetime.now(timezone.utc).isoformat()}
+                    ),
+                    self.event_loop
+                )
             
             return result
             
@@ -440,14 +500,18 @@ class BookRetriever:
             self.stats['orchestrations_failed'] += 1
             
             # Update book status
-            asyncio.create_task(self._update_book_status(
-                state['book_id'],
-                "failed",
-                {
-                    "error": str(e),
-                    "failed_at": datetime.now(timezone.utc).isoformat()
-                }
-            ))
+            if self.event_loop and not self.event_loop.is_closed():
+                asyncio.run_coroutine_threadsafe(
+                    self._update_book_status(
+                        state['book_id'],
+                        "failed",
+                        {
+                            "error": str(e),
+                            "failed_at": datetime.now(timezone.utc).isoformat()
+                        }
+                    ),
+                    self.event_loop
+                )
             
             # Handle retry logic
             if state['retry_count'] < self.config.max_retries:
@@ -502,7 +566,7 @@ class BookRetriever:
         Process a single book through validation, normalization, and orchestration.
         
         Args:
-            book: Raw book data from queue
+            book: Queue message containing book_id for retrieval from MongoDB
             
         Returns:
             True if processing started successfully, False otherwise
@@ -510,8 +574,30 @@ class BookRetriever:
         book_id = book.get('book_id', book.get('_id', 'unknown'))
         
         try:
-            # Validate book data
-            is_valid, errors = self.validate_book_data(book)
+            # Retrieve the actual book from MongoDB collection
+            logger.info(f"Retrieving book {book_id} from MongoDB collection")
+            actual_book = await self.books_collection.find_one(
+                {"$or": [{"_id": book_id}, {"book_id": book_id}]}
+            )
+            
+            if not actual_book:
+                logger.error(f"Book {book_id} not found in MongoDB collection")
+                self.stats['books_failed'] += 1
+                
+                # Move to dead letter queue
+                error_data = {
+                    'book_id': book_id,
+                    'error': 'Book not found in collection',
+                    'failed_at': datetime.now(timezone.utc).isoformat(),
+                    'original_message': book
+                }
+                self.redis_client.rpush(self.config.dead_letter_queue, json.dumps(error_data))
+                return False
+            
+            logger.info(f"Successfully retrieved book {book_id} from MongoDB")
+            
+            # Validate the actual book data from the collection
+            is_valid, errors = self.validate_book_data(actual_book)
             if not is_valid:
                 logger.error(f"Book {book_id} validation failed: {errors}")
                 self.stats['books_failed'] += 1
@@ -521,13 +607,13 @@ class BookRetriever:
                     'book_id': book_id,
                     'validation_errors': errors,
                     'failed_at': datetime.now(timezone.utc).isoformat(),
-                    'original_data': book
+                    'original_message': book
                 }
                 self.redis_client.rpush(self.config.dead_letter_queue, json.dumps(error_data))
                 return False
             
-            # Normalize book data
-            normalized_book = self.normalize_book_data(book)
+            # Normalize the actual book data
+            normalized_book = self.normalize_book_data(actual_book)
             
             # Create initial agent state
             initial_state = self.create_initial_agent_state(normalized_book)
@@ -655,6 +741,7 @@ class BookRetriever:
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            self.event_loop = loop  # Store reference for thread-safe async calls
             
             loop.run_until_complete(self.initialize())
             loop.run_until_complete(self.run())

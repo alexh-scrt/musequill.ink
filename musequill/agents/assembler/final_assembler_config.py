@@ -46,14 +46,14 @@ class FinalAssemblerConfig(BaseSettings):
         validation_alias="GENERATE_TABLE_OF_CONTENTS",
         description="Generate table of contents for the book"
     )
-    include_index: bool = Field(
+    enable_index: bool = Field(
         default=True,
-        validation_alias="INCLUDE_INDEX",
+        validation_alias="ENABLE_INDEX",
         description="Generate index for the book"
     )
-    generate_bibliography: bool = Field(
+    enable_bibliography: bool = Field(
         default=True,
-        validation_alias="GENERATE_BIBLIOGRAPHY",
+        validation_alias="ENABLE_BIBLIOGRAPHY",
         description="Generate bibliography from research sources"
     )
     add_chapter_numbering: bool = Field(
@@ -188,12 +188,32 @@ class FinalAssemblerConfig(BaseSettings):
         description="Cache formatted content to avoid reprocessing"
     )
     
+    validate_structure: bool = Field(
+        default=True,
+        validation_alias="VALIDATE_BOOK_STRUCTURE",
+        description="Validate book structure"
+    )
+
+    enable_table_of_contents: bool = Field(
+        default=True,
+        validation_alias="ENABLE_TABLE_OF_CONTENTS",
+        description="Enable table of contents generation"
+    )
+
     # Output file settings
     output_directory: str = Field(
         default="./generated_books",
         validation_alias="BOOK_OUTPUT_DIRECTORY",
         description="Directory for generated book files"
     )
+
+    # Output file settings
+    temp_directory: str = Field(
+        default="./temp",
+        validation_alias="BOOK_TEMP_DIRECTORY",
+        description="Temp directory for generated book files"
+    )
+
     filename_template: str = Field(
         default="{title}_{version}_{timestamp}",
         validation_alias="FILENAME_TEMPLATE",
@@ -251,6 +271,23 @@ class FinalAssemblerConfig(BaseSettings):
         description="Maximum processing timeout in seconds",
         ge=300,
         le=3600
+    )
+    
+    # Additional settings missing from config
+    include_copyright_notice: bool = Field(
+        default=True,
+        validation_alias="INCLUDE_COPYRIGHT_NOTICE",
+        description="Include copyright notice page"
+    )
+    cleanup_temp_files: bool = Field(
+        default=True,
+        validation_alias="CLEANUP_TEMP_FILES",
+        description="Clean up temporary files after processing"
+    )
+    fallback_on_format_failure: bool = Field(
+        default=True,
+        validation_alias="FALLBACK_ON_FORMAT_FAILURE",
+        description="Continue processing other formats if one fails"
     )
     
     model_config = SettingsConfigDict(

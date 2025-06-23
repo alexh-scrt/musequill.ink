@@ -155,11 +155,27 @@ class ResearcherAgent:
                 logger.info(f"Created new Chroma collection: {self.config.chroma_collection_name}")
             
             # Initialize OpenAI embeddings
-            self.embeddings = OpenAIEmbeddings(
-                api_key=self.config.openai_api_key,
-                model=self.config.embedding_model,
-                dimensions=self.config.embedding_dimensions
-            )
+            # For text-embedding-3-small and text-embedding-3-large, only set dimensions if different from default
+            embedding_kwargs = {
+                "api_key": self.config.openai_api_key,
+                "model": self.config.embedding_model
+            }
+            
+            # Only add dimensions parameter if it's different from the model's default
+            if (self.config.embedding_model == "text-embedding-3-small" and 
+                self.config.embedding_dimensions != 1536):
+                embedding_kwargs["dimensions"] = self.config.embedding_dimensions
+            elif (self.config.embedding_model == "text-embedding-3-large" and 
+                  self.config.embedding_dimensions != 3072):
+                embedding_kwargs["dimensions"] = self.config.embedding_dimensions
+            elif self.config.embedding_model == "text-embedding-ada-002":
+                # text-embedding-ada-002 has fixed dimensions of 1536 and doesn't support custom dimensions
+                pass
+            else:
+                # For other models, include dimensions parameter
+                embedding_kwargs["dimensions"] = self.config.embedding_dimensions
+            
+            self.embeddings = OpenAIEmbeddings(**embedding_kwargs)
             
             # Initialize text splitter
             self.text_splitter = RecursiveCharacterTextSplitter(
@@ -182,7 +198,7 @@ class ResearcherAgent:
             state: BookWritingState containing research queries
             
         Returns:
-            Dictionary with research results and updated queries
+            Dictionary with research results and updated state information
         """
         try:
             logger.info(f"Starting research execution for book {state['book_id']}")
@@ -197,9 +213,12 @@ class ResearcherAgent:
                     'updated_queries': state['research_queries'],
                     'total_chunks': 0,
                     'total_sources': 0,
-                    'stats': self.stats
+                    'stats': self.stats,
+                    'chroma_storage_info': self._get_chroma_storage_info(state['book_id'])
                 }
-            
+            len_pending_queries = len(pending_queries)
+            pending_queries_idx = len_pending_queries if len_pending_queries < self.config.max_research_queries else self.config.max_research_queries
+            pending_queries = pending_queries[:pending_queries_idx]
             logger.info(f"Processing {len(pending_queries)} research queries")
             
             # Execute research queries with concurrency control
@@ -218,6 +237,9 @@ class ResearcherAgent:
             
             execution_time = time.time() - self.stats['processing_start_time']
             
+            # Prepare ChromaDB storage information for state
+            chroma_storage_info = self._get_chroma_storage_info(state['book_id'])
+            
             logger.info(
                 f"Research execution completed for book {state['book_id']}: "
                 f"{total_chunks} chunks stored, {total_sources} sources processed, "
@@ -230,7 +252,8 @@ class ResearcherAgent:
                 'total_sources': total_sources,
                 'execution_time': execution_time,
                 'stats': self.stats,
-                'detailed_results': research_results
+                'detailed_results': research_results,
+                'chroma_storage_info': chroma_storage_info
             }
             
         except Exception as e:
@@ -238,13 +261,14 @@ class ResearcherAgent:
             logger.error(traceback.format_exc())
             self.stats['queries_failed'] += len(pending_queries)
             
-            # Return failure result
+            # Return failure result with ChromaDB storage info
             return {
                 'updated_queries': self._mark_queries_failed(state['research_queries'], str(e)),
                 'total_chunks': 0,
                 'total_sources': 0,
                 'error': str(e),
-                'stats': self.stats
+                'stats': self.stats,
+                'chroma_storage_info': self._get_chroma_storage_info(state['book_id'])
             }
     
     def _execute_queries_concurrently(self, queries: List[ResearchQuery], book_id: str) -> Dict[str, ResearchResults]:
@@ -457,7 +481,9 @@ class ResearcherAgent:
         
         for result in results:
             # Check minimum score threshold
-            if result.score < self.config.min_source_score:
+            if result.score > self.config.min_source_score:
+                filtered_results.append(result)
+                self.processed_urls.add(result.url)
                 continue
             
             # Check domain filtering
@@ -532,10 +558,18 @@ class ResearcherAgent:
         sentence_count = len(re.findall(r'[.!?]+', content))
         if sentence_count > 3:  # Multiple sentences indicate structured content
             quality_score += 0.2
-        
+        else:
+            # Count words per sentence
+            word_counts = [len(re.findall(r'\w+', s)) for s in content]
+            average_words_per_sentence = sum(word_counts) / len(word_counts) if word_counts else 0
+
+            # Adjust score if average sentence length is substantial (e.g., 10+ words)
+            if average_words_per_sentence >= 10:
+                quality_score += 0.125  # or another weight based on your scoring logic
+
         # Presence of meaningful content (not just navigation/ads)
         meaningful_words = len(re.findall(r'\b[a-zA-Z]{4,}\b', content))
-        if meaningful_words > 50:
+        if meaningful_words > 750:
             quality_score += 0.1
         
         return quality_score >= self.config.min_content_quality_score
@@ -592,21 +626,22 @@ class ResearcherAgent:
                     chunk_id = f"{book_id}_{query['query_type']}_{uuid4().hex[:12]}"
                     
                     # Create comprehensive metadata
+                    # ChromaDB metadata must be strings, numbers, or booleans - no None values
                     metadata = {
-                        'book_id': book_id,
-                        'query': query['query'],
-                        'query_type': query['query_type'],
-                        'query_priority': query['priority'],
-                        'source_url': result.url,
-                        'source_title': result.title,
-                        'source_domain': result.domain,
-                        'source_score': result.score,
-                        'chunk_index': i,
-                        'chunk_size': len(chunk_text),
-                        'published_date': result.published_date,
-                        'processed_at': datetime.now(timezone.utc).isoformat(),
-                        'tavily_answer': result.tavily_answer[:500] if result.tavily_answer else None,
-                        'total_chunks_from_source': len(text_chunks)
+                        'book_id': str(book_id),
+                        'query': str(query['query']),
+                        'query_type': str(query['query_type']),
+                        'query_priority': int(query['priority']),
+                        'source_url': str(result.url),
+                        'source_title': str(result.title),
+                        'source_domain': str(result.domain),
+                        'source_score': float(result.score),
+                        'chunk_index': int(i),
+                        'chunk_size': int(len(chunk_text)),
+                        'published_date': str(result.published_date) if result.published_date is not None else "",
+                        'processed_at': str(datetime.now(timezone.utc).isoformat()),
+                        'tavily_answer': str(result.tavily_answer[:500]) if result.tavily_answer else "",
+                        'total_chunks_from_source': int(len(text_chunks))
                     }
                     
                     # Calculate quality score for this chunk
@@ -721,6 +756,11 @@ class ResearcherAgent:
                     embeddings = [chunk.embedding for chunk in batch]
                     metadatas = [chunk.metadata for chunk in batch]
                     
+                    # Log the book_id being stored for debugging
+                    if metadatas:
+                        sample_book_ids = set(m.get('book_id') for m in metadatas[:3])
+                        logger.info(f"Storing batch with book_ids: {list(sample_book_ids)} (types: {[type(bid) for bid in sample_book_ids]})")
+                    
                     # Store batch in Chroma
                     self.chroma_collection.add(
                         ids=ids,
@@ -741,8 +781,10 @@ class ResearcherAgent:
                     logger.error(f"Failed to store batch starting at index {i}: {e}")
                     # Continue with next batch rather than failing completely
                     continue
-            
-            logger.info(f"Successfully stored {stored_count}/{len(chunks)} chunks in Chroma for book {book_id}")
+            if stored_count > 0:
+                logger.info(f"Stored {stored_count} chunks in Chroma for book {book_id}")
+            else:
+                logger.warning(f"Did not store any chunks in Chroma for book {book_id}")
             return stored_count
             
         except Exception as e:
@@ -996,6 +1038,55 @@ class ResearcherAgent:
         except Exception as e:
             logger.error(f"Error cleaning up research for book {book_id}: {e}")
             return False
+    
+    def _get_chroma_storage_info(self, book_id: str) -> Dict[str, Any]:
+        """
+        Get ChromaDB storage information for the book.
+        
+        Args:
+            book_id: Book identifier
+            
+        Returns:
+            Dictionary with ChromaDB storage details
+        """
+        try:
+            # Get current chunk count for this book
+            current_count = 0
+            try:
+                results = self.chroma_collection.get(
+                    where={"book_id": book_id},
+                    include=["metadatas"]
+                )
+                current_count = len(results['ids']) if results['ids'] else 0
+            except Exception as e:
+                logger.warning(f"Could not get current chunk count for book {book_id}: {e}")
+            
+            storage_info = {
+                'collection_name': self.config.chroma_collection_name,
+                'chroma_host': self.config.chroma_host,
+                'chroma_port': self.config.chroma_port,
+                'book_id': book_id,
+                'chunks_in_collection': current_count,
+                'last_updated': datetime.now(timezone.utc).isoformat(),
+                'storage_type': 'chromadb'
+            }
+            
+            logger.debug(f"ChromaDB storage info for book {book_id}: {storage_info}")
+            return storage_info
+            
+        except Exception as e:
+            logger.error(f"Error getting ChromaDB storage info for book {book_id}: {e}")
+            # Return minimal storage info even if there's an error
+            return {
+                'collection_name': self.config.chroma_collection_name,
+                'chroma_host': self.config.chroma_host,
+                'chroma_port': self.config.chroma_port,
+                'book_id': book_id,
+                'chunks_in_collection': 0,
+                'last_updated': datetime.now(timezone.utc).isoformat(),
+                'storage_type': 'chromadb',
+                'error': str(e)
+            }
     
     def get_stats(self) -> Dict[str, Any]:
         """Get current statistics for the researcher agent."""

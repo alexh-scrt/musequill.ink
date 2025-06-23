@@ -146,6 +146,84 @@ class ResearchValidatorAgent:
             logger.error(f"Failed to initialize research validator components: {e}")
             raise
     
+    def _get_chroma_storage_info_from_state(self, state: BookWritingState) -> Dict[str, Any]:
+        """
+        Get ChromaDB storage information from state metadata.
+        
+        Args:
+            state: BookWritingState containing potential storage information
+            
+        Returns:
+            Dictionary with ChromaDB storage details
+        """
+        # Check if research storage info is in state metadata
+        research_storage = state.get('metadata', {}).get('research_storage')
+        if research_storage and research_storage.get('storage_type') == 'chromadb':
+            logger.info(f"Using ChromaDB storage info from state: {research_storage.get('collection_name')}")
+            return research_storage
+        
+        # Check if chroma_storage_info is provided directly in state (from recent research execution)
+        if 'chroma_storage_info' in state:
+            logger.info("Using ChromaDB storage info from recent research execution")
+            return state['chroma_storage_info']
+        
+        # Fall back to configuration defaults
+        logger.info("No ChromaDB storage info found in state, using configuration defaults")
+        return {
+            'collection_name': self.config.chroma_collection_name,
+            'chroma_host': self.config.chroma_host,
+            'chroma_port': self.config.chroma_port,
+            'book_id': state['book_id'],
+            'storage_type': 'chromadb',
+            'source': 'config_fallback'
+        }
+    
+    def _initialize_chroma_from_storage_info(self, storage_info: Dict[str, Any]) -> None:
+        """
+        Initialize or reinitialize ChromaDB collection based on storage info.
+        
+        Args:
+            storage_info: Dictionary containing ChromaDB connection details
+        """
+        try:
+            # Check if we need to reinitialize with different settings
+            current_collection_name = getattr(self.chroma_collection, 'name', None) if self.chroma_collection else None
+            target_collection_name = storage_info.get('collection_name')
+            
+            if (current_collection_name != target_collection_name or 
+                storage_info.get('chroma_host') != self.config.chroma_host or
+                storage_info.get('chroma_port') != self.config.chroma_port):
+                
+                logger.info(f"Reinitializing ChromaDB with collection: {target_collection_name}")
+                
+                # Create new client with storage info settings
+                self.chroma_client = chromadb.HttpClient(
+                    host=storage_info.get('chroma_host', self.config.chroma_host),
+                    port=storage_info.get('chroma_port', self.config.chroma_port),
+                    settings=Settings(
+                        chroma_server_authn_credentials=None,
+                        chroma_server_authn_provider=None
+                    )
+                )
+                
+                # Get the collection specified in storage info
+                self.chroma_collection = self.chroma_client.get_collection(
+                    name=target_collection_name
+                )
+                
+                logger.info(f"Successfully connected to ChromaDB collection: {target_collection_name}")
+            else:
+                logger.debug("ChromaDB collection already properly initialized")
+                
+        except Exception as e:
+            logger.error(f"Failed to initialize ChromaDB from storage info: {e}")
+            # Fall back to existing initialization
+            if not self.chroma_collection:
+                logger.warning("Falling back to default collection initialization")
+                self.chroma_collection = self.chroma_client.get_collection(
+                    name=self.config.chroma_collection_name
+                )
+    
     def _get_validation_thresholds(self) -> Dict[str, Any]:
         """Get validation thresholds based on strictness level."""
         base_thresholds = {
@@ -208,6 +286,12 @@ class ResearchValidatorAgent:
         try:
             logger.info(f"Starting research validation for book {state['book_id']}")
             start_time = time.time()
+            
+            # Get ChromaDB storage information from state metadata or fall back to config
+            chroma_storage_info = self._get_chroma_storage_info_from_state(state)
+            
+            # Initialize Chroma collection based on state information
+            self._initialize_chroma_from_storage_info(chroma_storage_info)
             
             # Retrieve research data from Chroma
             research_data = self._retrieve_research_data(state['book_id'])
@@ -301,21 +385,63 @@ class ResearchValidatorAgent:
     def _retrieve_research_data(self, book_id: str) -> Dict[str, Any]:
         """Retrieve and organize research data from Chroma."""
         try:
+            # Log the book_id we're searching for
+            logger.info(f"Searching for research data with book_id: '{book_id}' (type: {type(book_id)})")
+            
             # Get all research chunks for this book
             results = self.chroma_collection.get(
                 where={"book_id": book_id},
                 include=["documents", "metadatas", "embeddings"]
             )
             
+            # Log the raw results to debug
+            logger.info(f"ChromaDB query returned {len(results.get('documents', []))} documents")
+            
+            # Process metadata safely
+            try:
+                metadatas = results.get('metadatas', [])
+                if metadatas and len(metadatas) > 0:
+                    # Log sample metadata to see what book_ids are actually stored
+                    sample_metadata = metadatas[:3] if len(metadatas) >= 3 else metadatas
+                    logger.info(f"Sample metadata book_ids: {[m.get('book_id') for m in sample_metadata]}")
+            except Exception as e:
+                logger.warning(f"Error processing metadata: {e}")
+            
+            # Also try a broader search to see if there are any chunks at all
+            try:
+                all_results = self.chroma_collection.get(
+                    include=["metadatas"],
+                    limit=10  # Just get a few for debugging
+                )
+                all_metadatas = all_results.get('metadatas', [])
+                if all_metadatas and len(all_metadatas) > 0:
+                    all_book_ids = set(m.get('book_id') for m in all_metadatas if m.get('book_id'))
+                    logger.info(f"Available book_ids in collection: {list(all_book_ids)}")
+                else:
+                    logger.warning("No metadata found in collection at all")
+            except Exception as e:
+                logger.warning(f"Could not query all chunks for debugging: {e}")
+            
             chunks = []
-            if results['documents']:
-                for i, (doc, metadata) in enumerate(zip(results['documents'], results['metadatas'])):
-                    chunk_data = {
-                        'content': doc,
-                        'metadata': metadata,
-                        'embedding': results['embeddings'][i] if results['embeddings'] else None
-                    }
-                    chunks.append(chunk_data)
+            try:
+                documents = results.get('documents', [])
+                metadatas = results.get('metadatas', [])
+                embeddings = results.get('embeddings', [])
+                
+                # Safely check if documents exist and have content
+                if documents is not None and len(documents) > 0:
+                    for i, (doc, metadata) in enumerate(zip(documents, metadatas)):
+                        chunk_data = {
+                            'content': doc,
+                            'metadata': metadata,
+                            'embedding': embeddings[i] if embeddings is not None and len(embeddings) > i else None
+                        }
+                        chunks.append(chunk_data)
+            except Exception as e:
+                logger.error(f"Error processing chunks: {e}")
+                import traceback
+                logger.error(f"Stack trace: {traceback.format_exc()}")
+                chunks = []
             
             # Organize by query and category
             query_groups = defaultdict(list)

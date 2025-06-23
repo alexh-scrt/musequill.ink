@@ -3,6 +3,7 @@ Configuration management for the Researcher Agent
 """
 
 from pydantic import Field
+from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -119,9 +120,17 @@ class ResearcherConfig(BaseSettings):
         le=200000
     )
     
+    max_research_queries: int = Field(
+        default=10,
+        validation_alias="MAX_RESEARCH_QUERIES",
+        description="Maximum number of research queries to perform",
+        ge=1,
+        le=20
+    )
+
     # Processing settings
     max_concurrent_queries: int = Field(
-        default=3,
+        default=5,
         validation_alias="MAX_CONCURRENT_RESEARCH_QUERIES",
         description="Maximum concurrent research queries",
         ge=1,
@@ -176,14 +185,56 @@ class ResearcherConfig(BaseSettings):
     )
     
     # Source Quality settings
-    trusted_domains: list = Field(
+    trusted_domains: List[str] = Field(
         default=[
-            "edu", "gov", "org", "wikipedia.org", "scholar.google.com",
-            "nature.com", "science.org", "ieee.org", "acm.org", 
-            "reuters.com", "bbc.com", "nytimes.com", "washingtonpost.com"
+            # --- Academia & Research ---
+            "edu", "ac.uk", "ac.jp", "ac.ca", "scholar.google.com", "arxiv.org",
+            "biorxiv.org", "medrxiv.org", "ssrn.com", "zenodo.org", "osf.io",
+            "europepmc.org", "pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov",
+            "jstor.org", "sciencedirect.com", "springer.com", "wiley.com",
+            "tandfonline.com", "sagepub.com", "cambridge.org", "oup.com",
+            "nature.com", "cell.com", "aaas.org", "acs.org", "rsc.org",
+            "researchgate.net", "semanticscholar.org", "dblp.org", "scopus.com",
+            "clarivate.com", "mit.edu", "harvard.edu", "stanford.edu",
+            "berkeley.edu", "princeton.edu", "ox.ac.uk", "cam.ac.uk",
+            "ethz.ch", "epfl.ch", "utoronto.ca", "ubc.ca", "nus.edu.sg",
+            "titech.ac.jp",
+
+            # --- News ---
+            "reuters.com", "apnews.com", "bbc.com", "aljazeera.com", "dw.com",
+            "france24.com", "cnbc.com", "bloomberg.com", "economist.com",
+            "foreignaffairs.com", "abc.net.au", "nytimes.com", "washingtonpost.com",
+            "npr.org", "pbs.org", "wsj.com", "theatlantic.com", "politico.com",
+            "propublica.org", "vox.com", "axios.com", "theguardian.com", "ft.com",
+            "independent.co.uk", "telegraph.co.uk", "cbc.ca", "globalnews.ca",
+            "ctvnews.ca", "nationalpost.com", "theglobeandmail.com", "lemonde.fr",
+            "spiegel.de", "elpais.com", "corriere.it", "ansa.it", "scmp.com",
+            "straitstimes.com", "hindustantimes.com", "thehindu.com", "dawn.com",
+            "news24.com",
+
+            # --- Reference & Fact Checking ---
+            "wikipedia.org", "britannica.com", "encyclopedia.com", "infoplease.com",
+            "newworldencyclopedia.org", "archive.org", "projectgutenberg.org",
+            "loc.gov", "europeana.eu", "hathitrust.org", "gallica.bnf.fr",
+            "digital.nls.uk", "data.gov", "ourworldindata.org", "statista.com",
+            "worldbank.org", "imf.org", "oecd.org", "un.org", "data.europa.eu",
+            "snopes.com", "factcheck.org", "politifact.com", "truthorfiction.com",
+            "reuters.com/fact-check", "apnews.com/APFactCheck",
+
+            # --- Literature ---
+            "projectgutenberg.org", "archive.org", "hathitrust.org", "loc.gov",
+            "gallica.bnf.fr", "poetryfoundation.org", "nobelprize.org",
+            "literature.org", "librarything.com", "openlibrary.org", "mla.org",
+            "litencyc.com", "goodreads.com", "litcharts.com", "sparknotes.com",
+            "shmoop.com", "cliffsnotes.com", "writerwiki.com", "quillandsteel.com",
+
+            # --- Government & Institutions ---
+            "gov", "who.int", "un.org", "europa.eu", "cdc.gov",
+            "nih.gov", "nasa.gov"
         ],
-        description="List of trusted domain patterns"
+        description="List of trusted domain patterns for evaluating source credibility."
     )
+
     blocked_domains: list = Field(
         default=[
             "example.com", "test.com", "spam.com"
@@ -191,7 +242,7 @@ class ResearcherConfig(BaseSettings):
         description="List of blocked domain patterns"
     )
     min_source_score: float = Field(
-        default=0.1,
+        default=0.8,
         validation_alias="MIN_SOURCE_SCORE",
         description="Minimum Tavily source score to include",
         ge=0.0,

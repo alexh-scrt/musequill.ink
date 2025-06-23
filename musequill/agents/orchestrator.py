@@ -61,7 +61,7 @@ def research_planning_node(state: BookWritingState) -> BookWritingState:
         
         # Update state with research plan
         updated_state = state.copy()
-        updated_state['current_stage'] = ProcessingStage.RESEARCH_PLANNING
+        updated_state['current_stage'] = ProcessingStage.RESEARCH_PLANNING.value
         updated_state['research_strategy'] = research_plan['strategy']
         updated_state['research_queries'] = research_plan['queries']
         updated_state['progress_percentage'] = 10.0
@@ -73,8 +73,10 @@ def research_planning_node(state: BookWritingState) -> BookWritingState:
     except Exception as e:
         logger.error(f"Error in research planning for book {state['book_id']}: {e}")
         updated_state = state.copy()
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
         updated_state['errors'].append(f"Research planning failed: {str(e)}")
-        updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['current_stage'] = ProcessingStage.FAILED.value
         return updated_state
 
 
@@ -99,10 +101,14 @@ def research_execution_node(state: BookWritingState) -> BookWritingState:
         
         # Update state with research results
         updated_state = state.copy()
-        updated_state['current_stage'] = ProcessingStage.RESEARCHING
+        updated_state['current_stage'] = ProcessingStage.RESEARCHING.value
         updated_state['total_research_chunks'] = research_results['total_chunks']
         updated_state['research_queries'] = research_results['updated_queries']
         updated_state['progress_percentage'] = 30.0
+        
+        # Store ChromaDB storage information for the validator
+        if 'chroma_storage_info' in research_results:
+            updated_state.setdefault('metadata', {})['research_storage'] = research_results['chroma_storage_info']
         
         logger.info(f"Research execution completed for book {state['book_id']}, stored {research_results['total_chunks']} chunks")
         
@@ -111,8 +117,10 @@ def research_execution_node(state: BookWritingState) -> BookWritingState:
     except Exception as e:
         logger.error(f"Error in research execution for book {state['book_id']}: {e}")
         updated_state = state.copy()
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
         updated_state['errors'].append(f"Research execution failed: {str(e)}")
-        updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['current_stage'] = ProcessingStage.FAILED.value
         return updated_state
 
 
@@ -139,14 +147,14 @@ def research_validation_node(state: BookWritingState) -> BookWritingState:
         updated_state = state.copy()
         
         if validation_results['is_sufficient']:
-            updated_state['current_stage'] = ProcessingStage.RESEARCH_COMPLETE
+            updated_state['current_stage'] = ProcessingStage.RESEARCH_COMPLETE.value
             updated_state['research_completed_at'] = validation_results['completed_at']
             updated_state['progress_percentage'] = 40.0
             logger.info(f"Research validation passed for book {state['book_id']}")
         else:
             # Research insufficient, add more queries
             updated_state['research_queries'].extend(validation_results['additional_queries'])
-            updated_state['current_stage'] = ProcessingStage.RESEARCHING
+            updated_state['current_stage'] = ProcessingStage.RESEARCHING.value
             logger.info(f"Research validation failed for book {state['book_id']}, added {len(validation_results['additional_queries'])} additional queries")
         
         return updated_state
@@ -154,8 +162,10 @@ def research_validation_node(state: BookWritingState) -> BookWritingState:
     except Exception as e:
         logger.error(f"Error in research validation for book {state['book_id']}: {e}")
         updated_state = state.copy()
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
         updated_state['errors'].append(f"Research validation failed: {str(e)}")
-        updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['current_stage'] = ProcessingStage.FAILED.value
         return updated_state
 
 
@@ -179,7 +189,7 @@ def writing_planning_node(state: BookWritingState) -> BookWritingState:
         
         # Update state with writing plan
         updated_state = state.copy()
-        updated_state['current_stage'] = ProcessingStage.WRITING_PLANNING
+        updated_state['current_stage'] = ProcessingStage.WRITING_PLANNING.value
         updated_state['writing_strategy'] = writing_plan['strategy']
         updated_state['writing_style_guide'] = writing_plan['style_guide']
         updated_state['chapters'] = writing_plan['updated_chapters']
@@ -193,8 +203,10 @@ def writing_planning_node(state: BookWritingState) -> BookWritingState:
     except Exception as e:
         logger.error(f"Error in writing planning for book {state['book_id']}: {e}")
         updated_state = state.copy()
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
         updated_state['errors'].append(f"Writing planning failed: {str(e)}")
-        updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['current_stage'] = ProcessingStage.FAILED.value
         return updated_state
 
 
@@ -224,7 +236,7 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
         if current_chapter_num >= total_chapters:
             logger.info(f"All chapters completed for book {state['book_id']}")
             updated_state = state.copy()
-            updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE
+            updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE.value
             updated_state['writing_completed_at'] = datetime.now(timezone.utc).isoformat()
             updated_state['progress_percentage'] = 90.0  # Ready for quality review
             return updated_state
@@ -243,7 +255,7 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
             # Update overall state
             updated_state['current_chapter'] = current_chapter_num + 1
             updated_state['total_word_count'] += writing_result['words_written']
-            updated_state['current_stage'] = ProcessingStage.WRITING
+            updated_state['current_stage'] = ProcessingStage.WRITING.value
             
             # Calculate progress (50% base + 40% for writing completion)
             writing_progress = (current_chapter_num + 1) / total_chapters * 40
@@ -257,7 +269,7 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
             
         elif writing_result['status'] == 'complete':
             # All chapters are done
-            updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE
+            updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE.value
             updated_state['writing_completed_at'] = datetime.now(timezone.utc).isoformat()
             updated_state['progress_percentage'] = 90.0
             logger.info(f"Chapter writing phase completed for book {state['book_id']}")
@@ -287,18 +299,22 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
                     logger.info(f"Chapter {retry_result['chapter_number']} completed on retry for book {state['book_id']}")
                 else:
                     # Retry also failed
+                    if updated_state['errors'] is None:
+                        updated_state['errors'] = []
                     updated_state['errors'].append(f"Chapter {current_chapter_num + 1} writing failed after {retry_count + 1} attempts: {error_message}")
                     updated_state['retry_count'] = retry_count + 1
                     updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
                     
                     # If max retries exceeded, mark as failed
                     if retry_count >= writer.config.max_retry_attempts - 1:
-                        updated_state['current_stage'] = ProcessingStage.FAILED
+                        updated_state['current_stage'] = ProcessingStage.FAILED.value
                         logger.error(f"Chapter writing failed for book {state['book_id']} after maximum retries")
             else:
                 # Max retries exceeded
+                if updated_state['errors'] is None:
+                    updated_state['errors'] = []
                 updated_state['errors'].append(f"Chapter writing failed: {error_message}")
-                updated_state['current_stage'] = ProcessingStage.FAILED
+                updated_state['current_stage'] = ProcessingStage.FAILED.value
                 logger.error(f"Chapter writing failed for book {state['book_id']}: {error_message}")
         
         return updated_state
@@ -306,8 +322,10 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
     except Exception as e:
         logger.error(f"Error in chapter writing for book {state['book_id']}: {e}")
         updated_state = state.copy()
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
         updated_state['errors'].append(f"Chapter writing node failed: {str(e)}")
-        updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['current_stage'] = ProcessingStage.FAILED.value
         updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
         return updated_state
 
@@ -342,8 +360,10 @@ def quality_review_node(state: BookWritingState) -> BookWritingState:
         if not completed_chapters:
             logger.error(f"No completed chapters found for quality review of book {state['book_id']}")
             updated_state = state.copy()
+            if updated_state['errors'] is None:
+                updated_state['errors'] = []
             updated_state['errors'].append("No completed chapters available for quality review")
-            updated_state['current_stage'] = ProcessingStage.FAILED
+            updated_state['current_stage'] = ProcessingStage.FAILED.value
             return updated_state
         
         logger.info(f"Reviewing {len(completed_chapters)} completed chapters for book {state['book_id']}")
@@ -357,12 +377,12 @@ def quality_review_node(state: BookWritingState) -> BookWritingState:
         if review_results['status'] == 'success':
             # Update state with review results
             updated_state['quality_score'] = review_results['overall_quality_score']
-            updated_state['current_stage'] = ProcessingStage.REVIEW
+            updated_state['current_stage'] = ProcessingStage.REVIEW.value
             
             # Store detailed review information
-            if 'review_notes' not in updated_state:
+            if 'review_notes' not in updated_state or not updated_state['review_notes']:
                 updated_state['review_notes'] = []
-            
+                updated_state['review_notes'].append(review_results['detailed_feedback'])
             # Add review summary to notes
             review_summary = (
                 f"Quality Review Complete - Score: {review_results['overall_quality_score']:.2f}/1.0, "
@@ -382,9 +402,9 @@ def quality_review_node(state: BookWritingState) -> BookWritingState:
                 'requires_revision': review_results['requires_revision'],
                 'revision_urgency': review_results.get('revision_urgency', 'medium'),
                 'approval_recommendation': review_results['approval_recommendation'],
-                'review_date': review_results['quality_assessment'].created_at,
-                'chapters_reviewed': len(review_results['chapter_metrics']),
-                'consistency_score': review_results['consistency_metrics']['overall_consistency_score'],
+                'review_date': datetime.now(timezone.utc).isoformat(),
+                # 'chapters_reviewed': len(review_results['chapter_metrics']),
+                # 'consistency_score': review_results['consistency_metrics']['overall_consistency_score'],
                 'priority_revision_areas': review_results.get('priority_revision_areas', [])
             }
             
@@ -402,26 +422,28 @@ def quality_review_node(state: BookWritingState) -> BookWritingState:
                     logger.warning(f"Book {state['book_id']} reached maximum revisions ({max_revisions})")
                     
                     if review_results['approval_recommendation'] == 'escalate_to_human_review':
-                        updated_state['current_stage'] = ProcessingStage.FAILED
+                        updated_state['current_stage'] = ProcessingStage.FAILED.value
+                        if updated_state['errors'] is None:
+                            updated_state['errors'] = []
                         updated_state['errors'].append(f"Quality review failed after {max_revisions} revision cycles - human review required")
                         updated_state['review_notes'].append("ESCALATED: Maximum revisions reached - requires human intervention")
                     else:
                         # Proceed to final assembly despite quality issues
-                        updated_state['current_stage'] = ProcessingStage.REVIEW
+                        updated_state['current_stage'] = ProcessingStage.REVIEW.value
                         updated_state['review_notes'].append("ACCEPTED: Proceeding despite quality concerns due to revision limit")
                         logger.info(f"Accepting book {state['book_id']} despite quality concerns - revision limit reached")
                 
                 else:
                     # Set up for revision cycle
                     updated_state['revision_count'] = current_revisions + 1
-                    updated_state['current_stage'] = ProcessingStage.REVIEW
+                    updated_state['current_stage'] = ProcessingStage.REVIEW.value
                     
                     # Store revision guidance
                     revision_guidance = {
                         'revision_strategy': review_results.get('revision_strategy', 'General quality improvement needed'),
                         'priority_areas': review_results.get('priority_revision_areas', []),
-                        'expected_improvements': review_results['quality_assessment'].revision_priority_areas,
-                        'urgency': review_results.get('revision_urgency', 'medium'),
+                        'expected_improvements': review_results['priority_revision_areas'],
+                        'urgency': review_results.get('revision_urgency', 'Medium'),
                         'detailed_feedback': review_results.get('detailed_feedback', '')
                     }
                     updated_state['metadata']['revision_guidance'] = revision_guidance
@@ -435,11 +457,11 @@ def quality_review_node(state: BookWritingState) -> BookWritingState:
             else:
                 # Book approved - proceed to final assembly
                 logger.info(f"Book {state['book_id']} approved - Quality score: {review_results['overall_quality_score']:.2f}")
-                updated_state['current_stage'] = ProcessingStage.REVIEW
+                updated_state['current_stage'] = ProcessingStage.REVIEW.value
                 updated_state['review_notes'].append("APPROVED: Quality review passed - proceeding to final assembly")
             
             # Update progress
-            if updated_state['current_stage'] == ProcessingStage.REVIEW:
+            if updated_state['current_stage'] == ProcessingStage.REVIEW.value:
                 updated_state['progress_percentage'] = 95.0  # Near completion
             
             logger.info(f"Quality review completed for book {state['book_id']} - Status: {updated_state['current_stage']}")
@@ -449,8 +471,10 @@ def quality_review_node(state: BookWritingState) -> BookWritingState:
             error_message = review_results.get('error_message', 'Unknown quality review error')
             logger.error(f"Quality review failed for book {state['book_id']}: {error_message}")
             
+            if updated_state['errors'] is None:
+                updated_state['errors'] = []
             updated_state['errors'].append(f"Quality review failed: {error_message}")
-            updated_state['current_stage'] = ProcessingStage.FAILED
+            updated_state['current_stage'] = ProcessingStage.FAILED.value
             updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
             
             # Add fallback review notes
@@ -462,8 +486,10 @@ def quality_review_node(state: BookWritingState) -> BookWritingState:
     except Exception as e:
         logger.error(f"Error in quality review for book {state['book_id']}: {e}")
         updated_state = state.copy()
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
         updated_state['errors'].append(f"Quality review node failed: {str(e)}")
-        updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['current_stage'] = ProcessingStage.FAILED.value
         updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
         
         # Add emergency review notes
@@ -480,7 +506,7 @@ def should_revise_or_complete(state: BookWritingState) -> Literal["chapter_write
     """
     try:
         # Check if we're in review stage and have review results
-        if state['current_stage'] != ProcessingStage.REVIEW:
+        if state['current_stage'] != ProcessingStage.REVIEW.value:
             logger.warning(f"Unexpected stage for revision decision: {state['current_stage']}")
             return "final_assembler"
         
@@ -555,19 +581,60 @@ def final_assembly_node(state: BookWritingState) -> BookWritingState:
         
         # Update state with final book content
         updated_state = state.copy()
-        updated_state['final_book_content'] = assembly_results['final_content']
-        updated_state['metadata'].update(assembly_results['metadata'])
-        updated_state['progress_percentage'] = 99.0
         
-        logger.info(f"Final assembly completed for book {state['book_id']}, total words: {assembly_results['total_words']}")
+        # Extract the actual AssemblyResults object from the returned data
+        assembly_data = assembly_results.get('assembly_results') if assembly_results.get('status') == 'success' else None
+        
+        if assembly_data:
+            # Update state with assembly results
+            updated_state['current_stage'] = ProcessingStage.COMPLETE.value
+            updated_state['progress_percentage'] = 99.0
+            
+            # Extract key information from assembly results
+            updated_state['total_word_count'] = assembly_data.total_word_count
+            updated_state['final_book_content'] = assembly_data.phase_results[2].output_data.get('master_content', '') if len(assembly_data.phase_results) > 2 else ''
+            
+            # Update metadata with book metadata
+            if assembly_data.metadata:
+                updated_state['metadata'].update({
+                    'book_metadata': assembly_data.metadata.__dict__,
+                    'generated_formats': [fmt.format_type.value for fmt in assembly_data.generated_formats],
+                    'failed_formats': assembly_data.failed_formats,
+                    'table_of_contents': [toc.__dict__ for toc in assembly_data.table_of_contents],
+                    'quality_metrics': assembly_data.quality_metrics,
+                    'assembly_statistics': assembly_data.assembly_statistics
+                })
+            
+            # Store file paths for generated formats
+            format_files = {}
+            for formatted_doc in assembly_data.generated_formats:
+                format_files[formatted_doc.format_type.value] = {
+                    'file_path': str(formatted_doc.file_path),
+                    'file_size': formatted_doc.file_size,
+                    'word_count': formatted_doc.word_count,
+                    'page_count': formatted_doc.page_count,
+                    'validation_status': formatted_doc.validation_status.value
+                }
+            updated_state['generated_format_files'] = format_files
+            
+            logger.info(f"Final assembly completed for book {state['book_id']}, total words: {assembly_data.total_word_count}, formats: {[fmt.format_type.value for fmt in assembly_data.generated_formats]}")
+        else:
+            # Assembly failed
+            if updated_state['errors'] is None:
+                updated_state['errors'] = []
+            updated_state['errors'].append(f"Final assembly failed: {assembly_results.get('error', 'Unknown assembly error')}")
+            updated_state['current_stage'] = ProcessingStage.FAILED.value
+            logger.error(f"Final assembly failed for book {state['book_id']}: {assembly_results.get('error', 'Unknown error')}")
         
         return updated_state
         
     except Exception as e:
         logger.error(f"Error in final assembly for book {state['book_id']}: {e}")
         updated_state = state.copy()
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
         updated_state['errors'].append(f"Final assembly failed: {str(e)}")
-        updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['current_stage'] = ProcessingStage.FAILED.value
         return updated_state
 
 
@@ -591,7 +658,7 @@ def book_storage_node(state: BookWritingState) -> BookWritingState:
         
         # Update state with storage confirmation
         updated_state = state.copy()
-        updated_state['current_stage'] = ProcessingStage.COMPLETE
+        updated_state['current_stage'] = ProcessingStage.COMPLETE.value
         updated_state['progress_percentage'] = 100.0
         updated_state['metadata'].update(storage_results['metadata'])
         
@@ -602,15 +669,17 @@ def book_storage_node(state: BookWritingState) -> BookWritingState:
     except Exception as e:
         logger.error(f"Error in book storage for book {state['book_id']}: {e}")
         updated_state = state.copy()
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
         updated_state['errors'].append(f"Book storage failed: {str(e)}")
-        updated_state['current_stage'] = ProcessingStage.FAILED
+        updated_state['current_stage'] = ProcessingStage.FAILED.value
         return updated_state
 
 
 # Edge condition functions
 def should_continue_research(state: BookWritingState) -> Literal["research_execution", "writing_planning"]:
     """Determine if more research is needed or if we can proceed to writing."""
-    if state['current_stage'] == ProcessingStage.RESEARCHING:
+    if state['current_stage'] == ProcessingStage.RESEARCHING.value:
         # Check if there are pending research queries
         pending_queries = [q for q in state['research_queries'] if q['status'] == 'pending']
         if pending_queries:
@@ -759,7 +828,7 @@ def main():
         author_preferences={},
         outline={"summary": "Test outline"},
         chapters=[],
-        current_stage=ProcessingStage.INITIALIZED,
+        current_stage=ProcessingStage.INITIALIZED.value,
         processing_started_at=datetime.now(timezone.utc).isoformat(),
         processing_updated_at=datetime.now(timezone.utc).isoformat(),
         research_queries=[],

@@ -102,6 +102,8 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """ app lifespan logic"""
+
     # startup sequence
     logger.info("🚀 Starting MuseQuill...")
     await startup_event()
@@ -130,7 +132,7 @@ async def startup_event():
     """
     global monitor_manager
     
-    logger.info("🚀 Starting MuseQuill API application...")
+    logger.info("🚀 startup event...")
     
     try:
         # Initialize monitor service manager
@@ -165,7 +167,7 @@ async def shutdown_event():
     Gracefully stops all monitoring services.
     """
     
-    logger.info("🛑 Shutting down MuseQuill API application...")
+    logger.info("🛑 shutdown event...")
     
     try:
         if monitor_manager:
@@ -280,6 +282,13 @@ async def restart_monitoring_service(service_name: str):
     except Exception as e:
         logger.error(f"Failed to restart service {service_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def get_agent_factory_dependency(
+    openai_client: OpenAIClient = Depends(get_openai_client)
+) -> AgentFactory:
+    """Get agent factory instance."""
+    return get_agent_factory(openai_client)
 
 
 # Enhanced health check that includes monitoring
@@ -408,13 +417,6 @@ app.add_middleware(
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-
-def get_agent_factory_dependency(
-    openai_client: OpenAIClient = Depends(get_openai_client)
-) -> AgentFactory:
-    """Get agent factory instance."""
-    return get_agent_factory(openai_client)
 
 
 # Exception handlers

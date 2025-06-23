@@ -417,7 +417,7 @@ QUALITY_THRESHOLDS = {
 
 VALIDATION_RULES = {
     "required_metadata_fields": [
-        "title", "author", "genre", "word_count", "chapter_count"
+        "title", "genre", "total_word_count"
     ],
     "required_chapter_fields": [
         "chapter_number", "title", "content"

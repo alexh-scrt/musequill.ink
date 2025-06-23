@@ -79,6 +79,7 @@ class ChapterContentModel(BaseModel):
     word_count_estimate: int
     quality_self_assessment: str
     suggested_next_chapter_connection: str
+    research_chunks_used: List[str] = []
 
 
 class ChapterWriterAgent:
@@ -127,8 +128,6 @@ class ChapterWriterAgent:
                 host=self.config.chroma_host,
                 port=self.config.chroma_port,
                 settings=Settings(
-                    chroma_client_auth_provider="chromadb.auth.token.TokenAuthClientProvider",
-                    chroma_client_auth_credentials=None,
                     anonymized_telemetry=False
                 )
             )

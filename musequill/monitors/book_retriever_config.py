@@ -78,7 +78,7 @@ class BookRetrieverConfig(BaseSettings):
     
     # Book validation settings
     required_fields: list = Field(
-        default=["book_id", "title", "description", "genre"],
+        default=["_id", "title", "description", "genre_info"],
         description="Required fields for book validation"
     )
     min_title_length: int = Field(
