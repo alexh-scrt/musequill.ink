@@ -1,4 +1,5 @@
 # Connect using mongosh
+mongosh "mongodb://musequill:musequill.ink.user@localhost:27117/musequill?authSource=musequill"
 
 mongosh "mongodb://musequill:musequill.ink.user@localhost:27017/musequill?authSource=musequill"
 

@@ -19,8 +19,9 @@ Based on the POC pattern but extended for book writing workflow.
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from typing import Dict, Any, Literal
+from typing import Dict, Any, Literal, List
 from enum import Enum
+from datetime import datetime, timezone
 
 from musequill.config.logging import get_logger
 from musequill.agents.agent_state import BookWritingState, ProcessingStage
@@ -216,6 +217,10 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
     
     Writes individual chapters using research materials from the vector database.
     Processes chapters iteratively until all are complete.
+    
+    Handles two scenarios:
+    1. Initial writing: Writes new chapters from scratch
+    2. Revision writing: Rewrites chapters based on review feedback
     """
     try:
         logger.info(f"Starting chapter writing for book {state['book_id']}")
@@ -226,98 +231,15 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
         # Create chapter writer instance
         writer = ChapterWriterAgent()
         
-        # Get current chapter status
-        current_chapter_num = state['current_chapter']
-        total_chapters = len(state['chapters'])
+        # Check if we're in revision mode
+        is_revision = state['current_stage'] == ProcessingStage.REVIEW.value
         
-        logger.info(f"Writing chapter {current_chapter_num + 1} of {total_chapters}")
-        
-        # Check if all chapters are complete
-        if current_chapter_num >= total_chapters:
-            logger.info(f"All chapters completed for book {state['book_id']}")
-            updated_state = state.copy()
-            updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE.value
-            updated_state['writing_completed_at'] = datetime.now(timezone.utc).isoformat()
-            updated_state['progress_percentage'] = 90.0  # Ready for quality review
-            return updated_state
-        
-        # Write the next chapter
-        writing_result = writer.write_next_chapter(state)
-        
-        # Update state based on writing result
-        updated_state = state.copy()
-        
-        if writing_result['status'] == 'success':
-            # Update the chapter in the state
-            chapter_index = writing_result['chapter_number'] - 1
-            updated_state['chapters'][chapter_index] = writing_result['updated_chapter']
-            
-            # Update overall state
-            updated_state['current_chapter'] = current_chapter_num + 1
-            updated_state['total_word_count'] += writing_result['words_written']
-            updated_state['current_stage'] = ProcessingStage.WRITING.value
-            
-            # Calculate progress (50% base + 40% for writing completion)
-            writing_progress = (current_chapter_num + 1) / total_chapters * 40
-            updated_state['progress_percentage'] = 50.0 + writing_progress
-            
-            # Update writing started timestamp if this is the first chapter
-            if current_chapter_num == 0 and not state.get('writing_started_at'):
-                updated_state['writing_started_at'] = datetime.now(timezone.utc).isoformat()
-            
-            logger.info(f"Successfully wrote Chapter {writing_result['chapter_number']} for book {state['book_id']}")
-            
-        elif writing_result['status'] == 'complete':
-            # All chapters are done
-            updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE.value
-            updated_state['writing_completed_at'] = datetime.now(timezone.utc).isoformat()
-            updated_state['progress_percentage'] = 90.0
-            logger.info(f"Chapter writing phase completed for book {state['book_id']}")
-            
+        if is_revision:
+            logger.info(f"Revision mode detected for book {state['book_id']}")
+            return _handle_chapter_revision(state, writer)
         else:
-            # Handle writing error
-            error_message = writing_result.get('error_message', 'Unknown chapter writing error')
-            retry_count = writing_result.get('retry_count', 0)
-            
-            if retry_count < writer.config.max_retry_attempts:
-                # Retry the chapter
-                logger.warning(f"Chapter {current_chapter_num + 1} failed, will retry. Error: {error_message}")
-                
-                retry_result = writer.retry_failed_chapter(state, current_chapter_num + 1, retry_count)
-                
-                if retry_result['status'] == 'success':
-                    # Update with retry success
-                    chapter_index = retry_result['chapter_number'] - 1
-                    updated_state['chapters'][chapter_index] = retry_result['updated_chapter']
-                    updated_state['current_chapter'] = current_chapter_num + 1
-                    updated_state['total_word_count'] += retry_result['updated_chapter'].get('word_count', 0)
-                    
-                    # Calculate progress
-                    writing_progress = (current_chapter_num + 1) / total_chapters * 40
-                    updated_state['progress_percentage'] = 50.0 + writing_progress
-                    
-                    logger.info(f"Chapter {retry_result['chapter_number']} completed on retry for book {state['book_id']}")
-                else:
-                    # Retry also failed
-                    if updated_state['errors'] is None:
-                        updated_state['errors'] = []
-                    updated_state['errors'].append(f"Chapter {current_chapter_num + 1} writing failed after {retry_count + 1} attempts: {error_message}")
-                    updated_state['retry_count'] = retry_count + 1
-                    updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
-                    
-                    # If max retries exceeded, mark as failed
-                    if retry_count >= writer.config.max_retry_attempts - 1:
-                        updated_state['current_stage'] = ProcessingStage.FAILED.value
-                        logger.error(f"Chapter writing failed for book {state['book_id']} after maximum retries")
-            else:
-                # Max retries exceeded
-                if updated_state['errors'] is None:
-                    updated_state['errors'] = []
-                updated_state['errors'].append(f"Chapter writing failed: {error_message}")
-                updated_state['current_stage'] = ProcessingStage.FAILED.value
-                logger.error(f"Chapter writing failed for book {state['book_id']}: {error_message}")
-        
-        return updated_state
+            logger.info(f"Initial writing mode for book {state['book_id']}")
+            return _handle_initial_chapter_writing(state, writer)
         
     except Exception as e:
         logger.error(f"Error in chapter writing for book {state['book_id']}: {e}")
@@ -330,12 +252,279 @@ def chapter_writing_node(state: BookWritingState) -> BookWritingState:
         return updated_state
 
 
-from datetime import datetime, timezone
-from typing import Literal
-from musequill.config.logging import get_logger
-from musequill.agents.agent_state import BookWritingState, ProcessingStage
+def _handle_initial_chapter_writing(state: BookWritingState, writer) -> BookWritingState:
+    """
+    Handle initial chapter writing (non-revision scenario).
+    """
+    # Get current chapter status
+    current_chapter_num = state['current_chapter']
+    total_chapters = len(state['chapters'])
+    
+    logger.info(f"Writing chapter {current_chapter_num + 1} of {total_chapters}")
+    
+    # Check if all chapters are complete
+    if current_chapter_num >= total_chapters:
+        logger.info(f"All chapters completed for book {state['book_id']}")
+        updated_state = state.copy()
+        updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE.value
+        updated_state['writing_completed_at'] = datetime.now(timezone.utc).isoformat()
+        updated_state['progress_percentage'] = 90.0  # Ready for quality review
+        return updated_state
+    
+    # Write the next chapter
+    writing_result = writer.write_next_chapter(state)
+    
+    # Update state based on writing result
+    updated_state = state.copy()
+    
+    if writing_result['status'] == 'success':
+        # Update the chapter in the state
+        chapter_index = writing_result['chapter_number'] - 1
+        updated_state['chapters'][chapter_index] = writing_result['updated_chapter']
+        
+        # Update overall state
+        updated_state['current_chapter'] = current_chapter_num + 1
+        updated_state['total_word_count'] += writing_result['words_written']
+        updated_state['current_stage'] = ProcessingStage.WRITING.value
+        
+        # Calculate progress (50% base + 40% for writing completion)
+        writing_progress = (current_chapter_num + 1) / total_chapters * 40
+        updated_state['progress_percentage'] = 50.0 + writing_progress
+        
+        # Update writing started timestamp if this is the first chapter
+        if current_chapter_num == 0 and not state.get('writing_started_at'):
+            updated_state['writing_started_at'] = datetime.now(timezone.utc).isoformat()
+        
+        logger.info(f"Successfully wrote Chapter {writing_result['chapter_number']} for book {state['book_id']}")
+        
+    elif writing_result['status'] == 'complete':
+        # All chapters are done
+        updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE.value
+        updated_state['writing_completed_at'] = datetime.now(timezone.utc).isoformat()
+        updated_state['progress_percentage'] = 90.0
+        logger.info(f"Chapter writing phase completed for book {state['book_id']}")
+        
+    else:
+        # Handle writing error
+        error_message = writing_result.get('error_message', 'Unknown chapter writing error')
+        retry_count = writing_result.get('retry_count', 0)
+        
+        if retry_count < writer.config.max_retry_attempts:
+            # Retry the chapter
+            logger.warning(f"Chapter {current_chapter_num + 1} failed, will retry. Error: {error_message}")
+            
+            retry_result = writer.retry_failed_chapter(state, current_chapter_num + 1, retry_count)
+            
+            if retry_result['status'] == 'success':
+                # Update with retry success
+                chapter_index = retry_result['chapter_number'] - 1
+                updated_state['chapters'][chapter_index] = retry_result['updated_chapter']
+                updated_state['current_chapter'] = current_chapter_num + 1
+                updated_state['total_word_count'] += retry_result['updated_chapter'].get('word_count', 0)
+                
+                # Calculate progress
+                writing_progress = (current_chapter_num + 1) / total_chapters * 40
+                updated_state['progress_percentage'] = 50.0 + writing_progress
+                
+                logger.info(f"Chapter {retry_result['chapter_number']} completed on retry for book {state['book_id']}")
+            else:
+                # Retry also failed
+                if updated_state['errors'] is None:
+                    updated_state['errors'] = []
+                updated_state['errors'].append(f"Chapter {current_chapter_num + 1} writing failed after {retry_count + 1} attempts: {error_message}")
+                updated_state['retry_count'] = retry_count + 1
+                updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
+                
+                # If max retries exceeded, mark as failed
+                if retry_count >= writer.config.max_retry_attempts - 1:
+                    updated_state['current_stage'] = ProcessingStage.FAILED.value
+                    logger.error(f"Chapter writing failed for book {state['book_id']} after maximum retries")
+        else:
+            # Max retries exceeded
+            if updated_state['errors'] is None:
+                updated_state['errors'] = []
+            updated_state['errors'].append(f"Chapter writing failed: {error_message}")
+            updated_state['current_stage'] = ProcessingStage.FAILED.value
+            logger.error(f"Chapter writing failed for book {state['book_id']}: {error_message}")
+    
+    return updated_state
 
-logger = get_logger(__name__)
+
+def _handle_chapter_revision(state: BookWritingState, writer) -> BookWritingState:
+    """
+    Handle chapter revision based on review feedback.
+    
+    When current_stage is 'review', this function:
+    1. Identifies chapters that need revision
+    2. Extracts review feedback from review_notes
+    3. Rewrites chapters incorporating the feedback
+    """
+    logger.info(f"Starting chapter revision for book {state['book_id']}")
+    
+    updated_state = state.copy()
+    
+    # Extract review feedback from review_notes
+    review_notes = state.get('review_notes', [])
+    if not review_notes:
+        logger.warning(f"No review notes found for revision of book {state['book_id']}")
+        # If no review notes, move to writing complete
+        updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE.value
+        return updated_state
+    
+    # Compile review feedback into a structured format
+    review_feedback = _extract_review_feedback(review_notes)
+    logger.info(f"Extracted review feedback for book {state['book_id']}: {len(review_feedback)} feedback items")
+    
+    # Get chapters that need revision (all completed chapters during revision)
+    chapters_to_revise = [
+        (i, chapter) for i, chapter in enumerate(state['chapters'])
+        if chapter.get('status') == 'complete' and chapter.get('content')
+    ]
+    
+    if not chapters_to_revise:
+        logger.warning(f"No completed chapters found for revision of book {state['book_id']}")
+        updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE.value
+        return updated_state
+    
+    logger.info(f"Revising {len(chapters_to_revise)} chapters for book {state['book_id']}")
+    
+    revision_success_count = 0
+    revision_errors = []
+    
+    # Revise each chapter with the review feedback
+    for chapter_index, chapter in chapters_to_revise:
+        try:
+            logger.info(f"Revising Chapter {chapter['chapter_number']} for book {state['book_id']}")
+            
+            # Call the writer agent with revision context
+            revision_result = writer.revise_chapter_with_feedback(
+                state=state,
+                chapter_index=chapter_index,
+                review_feedback=review_feedback,
+                revision_context={
+                    'revision_count': state.get('revision_count', 0),
+                    'quality_score': state.get('quality_score', 0.0),
+                    'revision_urgency': state.get('metadata', {}).get('revision_guidance', {}).get('urgency', 'medium')
+                }
+            )
+            
+            if revision_result['status'] == 'success':
+                # Update the revised chapter
+                updated_state['chapters'][chapter_index] = revision_result['updated_chapter']
+                
+                # Update word count (may have changed during revision)
+                old_word_count = chapter.get('word_count', 0)
+                new_word_count = revision_result['updated_chapter'].get('word_count', 0)
+                word_count_delta = new_word_count - old_word_count
+                updated_state['total_word_count'] += word_count_delta
+                
+                revision_success_count += 1
+                logger.info(f"Successfully revised Chapter {chapter['chapter_number']} for book {state['book_id']}")
+                
+            else:
+                error_msg = revision_result.get('error_message', 'Unknown revision error')
+                revision_errors.append(f"Chapter {chapter['chapter_number']}: {error_msg}")
+                logger.error(f"Failed to revise Chapter {chapter['chapter_number']} for book {state['book_id']}: {error_msg}")
+                
+        except Exception as e:
+            error_msg = f"Exception during chapter {chapter['chapter_number']} revision: {str(e)}"
+            revision_errors.append(error_msg)
+            logger.error(f"Error revising Chapter {chapter['chapter_number']} for book {state['book_id']}: {e}")
+    
+    # Update state based on revision results
+    if revision_success_count > 0:
+        logger.info(f"Successfully revised {revision_success_count}/{len(chapters_to_revise)} chapters for book {state['book_id']}")
+        
+        # Move back to writing complete stage to trigger quality review
+        updated_state['current_stage'] = ProcessingStage.WRITING_COMPLETE.value
+        updated_state['writing_completed_at'] = datetime.now(timezone.utc).isoformat()
+        
+        # Reset current_chapter to trigger proper flow
+        updated_state['current_chapter'] = len(updated_state['chapters'])
+        
+        # Update progress (back to pre-review state)
+        updated_state['progress_percentage'] = 90.0
+        
+        # Add revision completion note
+        if 'review_notes' not in updated_state:
+            updated_state['review_notes'] = []
+        updated_state['review_notes'].append(f"REVISION COMPLETED: {revision_success_count}/{len(chapters_to_revise)} chapters revised successfully")
+        
+    else:
+        logger.error(f"All chapter revisions failed for book {state['book_id']}")
+        updated_state['current_stage'] = ProcessingStage.FAILED.value
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
+        updated_state['errors'].extend(revision_errors)
+        updated_state['last_error_at'] = datetime.now(timezone.utc).isoformat()
+    
+    # Add any revision errors to the state
+    if revision_errors and updated_state['current_stage'] != ProcessingStage.FAILED.value:
+        if updated_state['errors'] is None:
+            updated_state['errors'] = []
+        updated_state['errors'].extend([f"Revision warning: {error}" for error in revision_errors])
+    
+    return updated_state
+
+
+def _extract_review_feedback(review_notes: List[str]) -> Dict[str, Any]:
+    """
+    Extract structured feedback from review notes.
+    
+    Args:
+        review_notes: List of review note strings
+        
+    Returns:
+        Dictionary containing structured feedback for revision
+    """
+    feedback = {
+        'overall_feedback': [],
+        'chapter_specific_feedback': {},
+        'priority_areas': [],
+        'quality_issues': [],
+        'recommendations': []
+    }
+    
+    for note in review_notes:
+        if not note or not isinstance(note, str):
+            continue
+            
+        note_lower = note.lower()
+        
+        # Extract priority areas
+        if 'priority areas:' in note_lower:
+            try:
+                areas_part = note.split('Priority Areas:')[1].strip()
+                areas = [area.strip() for area in areas_part.split(',') if area.strip()]
+                feedback['priority_areas'].extend(areas)
+            except (IndexError, AttributeError):
+                pass
+        
+        # Extract quality issues
+        if any(keyword in note_lower for keyword in ['consistency', 'research integration', 'quality score']):
+            feedback['quality_issues'].append(note)
+        
+        # Extract recommendations
+        if any(keyword in note_lower for keyword in ['recommendation', 'improve', 'enhance', 'fix']):
+            feedback['recommendations'].append(note)
+        
+        # Chapter-specific feedback (look for chapter numbers)
+        if 'chapter' in note_lower and any(char.isdigit() for char in note):
+            # Try to extract chapter numbers
+            import re
+            chapter_matches = re.findall(r'chapter\s+(\d+)', note_lower)
+            for chapter_num in chapter_matches:
+                chapter_key = f"chapter_{chapter_num}"
+                if chapter_key not in feedback['chapter_specific_feedback']:
+                    feedback['chapter_specific_feedback'][chapter_key] = []
+                feedback['chapter_specific_feedback'][chapter_key].append(note)
+        
+        # General feedback
+        feedback['overall_feedback'].append(note)
+    
+    return feedback
+
+
 
 
 def quality_review_node(state: BookWritingState) -> BookWritingState:

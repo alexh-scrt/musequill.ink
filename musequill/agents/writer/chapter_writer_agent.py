@@ -1072,6 +1072,188 @@ In the next chapter, we will continue building on these concepts to explore rela
         
         return stats
     
+    def revise_chapter_with_feedback(self, state: BookWritingState, chapter_index: int, 
+                                   review_feedback: Dict[str, Any], revision_context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Revise a chapter based on review feedback.
+        
+        Args:
+            state: Current book writing state
+            chapter_index: Index of the chapter to revise
+            review_feedback: Structured feedback from quality review
+            revision_context: Additional context for revision (revision_count, quality_score, etc.)
+            
+        Returns:
+            Dictionary containing revision results
+        """
+        try:
+            logger.info(f"Starting chapter revision for chapter {chapter_index + 1}")
+            
+            if chapter_index >= len(state['chapters']):
+                return {
+                    'status': 'failed',
+                    'error_message': f'Chapter index {chapter_index} out of range'
+                }
+            
+            chapter = state['chapters'][chapter_index]
+            chapter_number = chapter['chapter_number']
+            
+            # Build revision context
+            revision_context_data = self._build_revision_context(state, chapter, review_feedback, revision_context)
+            
+            # Generate revised content
+            revised_content = self._generate_revised_content(
+                chapter=chapter,
+                original_content=chapter.get('content', ''),
+                revision_context=revision_context_data
+            )
+            
+            if not revised_content:
+                return {
+                    'status': 'failed',
+                    'error_message': 'Failed to generate revised content'
+                }
+            
+            # Validate revised content
+            validation_results = self.validate_chapter_quality(revised_content, chapter, state)
+            
+            # Update chapter with revised content
+            updated_chapter = chapter.copy()
+            updated_chapter['content'] = revised_content
+            updated_chapter['word_count'] = len(revised_content.split())
+            updated_chapter['status'] = 'complete'
+            updated_chapter['completed_at'] = datetime.now(timezone.utc).isoformat()
+            
+            # Add revision metadata
+            if 'revision_history' not in updated_chapter:
+                updated_chapter['revision_history'] = []
+            
+            updated_chapter['revision_history'].append({
+                'revision_number': revision_context.get('revision_count', 0) + 1,
+                'revised_at': datetime.now(timezone.utc).isoformat(),
+                'feedback_applied': len(review_feedback.get('overall_feedback', [])),
+                'quality_score_before': revision_context.get('quality_score', 0.0),
+                'quality_score_after': validation_results.get('overall_score', 0.0),
+                'word_count_change': updated_chapter['word_count'] - chapter.get('word_count', 0)
+            })
+            
+            # Update statistics
+            self.writing_stats['chapters_written'] += 1
+            self.writing_stats['total_words_written'] += updated_chapter['word_count']
+            
+            logger.info(f"Successfully revised Chapter {chapter_number} - Word count: {updated_chapter['word_count']}")
+            
+            return {
+                'status': 'success',
+                'updated_chapter': updated_chapter,
+                'chapter_number': chapter_number,
+                'words_written': updated_chapter['word_count'],
+                'validation_results': validation_results,
+                'revision_applied': True
+            }
+            
+        except Exception as e:
+            logger.error(f"Error revising chapter {chapter_index + 1}: {e}")
+            return {
+                'status': 'failed',
+                'error_message': f'Chapter revision failed: {str(e)}',
+                'chapter_number': chapter.get('chapter_number', chapter_index + 1)
+            }
+    
+    def _build_revision_context(self, state: BookWritingState, chapter: Chapter, 
+                              review_feedback: Dict[str, Any], revision_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Build comprehensive context for chapter revision."""
+        
+        context = {
+            'chapter_info': chapter,
+            'book_info': {
+                'title': state.get('title', ''),
+                'genre': state.get('genre', ''),
+                'target_audience': state.get('target_audience', ''),
+                'writing_style_guide': state.get('writing_style_guide', ''),
+                'writing_strategy': state.get('writing_strategy', '')
+            },
+            'revision_info': {
+                'revision_count': revision_context.get('revision_count', 0),
+                'current_quality_score': revision_context.get('quality_score', 0.0),
+                'revision_urgency': revision_context.get('revision_urgency', 'medium')
+            },
+            'feedback': review_feedback
+        }
+        
+        # Add chapter-specific feedback if available
+        chapter_key = f"chapter_{chapter['chapter_number']}"
+        if chapter_key in review_feedback.get('chapter_specific_feedback', {}):
+            context['chapter_specific_feedback'] = review_feedback['chapter_specific_feedback'][chapter_key]
+        
+        return context
+    
+    def _generate_revised_content(self, chapter: Chapter, original_content: str, 
+                                revision_context: Dict[str, Any]) -> str:
+        """Generate revised chapter content based on feedback."""
+        
+        # Extract feedback elements
+        feedback = revision_context.get('feedback', {})
+        priority_areas = feedback.get('priority_areas', [])
+        quality_issues = feedback.get('quality_issues', [])
+        recommendations = feedback.get('recommendations', [])
+        chapter_specific = revision_context.get('chapter_specific_feedback', [])
+        
+        # Build revision prompt
+        revision_prompt = f"""You are an expert editor revising a chapter based on quality review feedback.
+
+CHAPTER INFORMATION:
+Title: {chapter['title']}
+Description: {chapter.get('description', 'N/A')}
+Target Word Count: {chapter.get('target_word_count', 'N/A')}
+Current Word Count: {len(original_content.split()) if original_content else 0}
+
+BOOK CONTEXT:
+Title: {revision_context['book_info']['title']}
+Genre: {revision_context['book_info']['genre']}
+Target Audience: {revision_context['book_info']['target_audience']}
+
+REVISION REQUIREMENTS:
+Current Quality Score: {revision_context['revision_info']['current_quality_score']:.2f}/1.0
+Revision Count: {revision_context['revision_info']['revision_count']}
+Urgency: {revision_context['revision_info']['revision_urgency']}
+
+FEEDBACK TO ADDRESS:
+Priority Areas: {', '.join(priority_areas) if priority_areas else 'None specified'}
+
+Quality Issues:
+{chr(10).join(f"- {issue}" for issue in quality_issues[:5]) if quality_issues else "- None specified"}
+
+Recommendations:
+{chr(10).join(f"- {rec}" for rec in recommendations[:5]) if recommendations else "- None specified"}
+
+Chapter-Specific Feedback:
+{chr(10).join(f"- {fb}" for fb in chapter_specific[:3]) if chapter_specific else "- None specified"}
+
+WRITING STYLE GUIDE:
+{revision_context['book_info']['writing_style_guide']}
+
+ORIGINAL CONTENT:
+{original_content}
+
+REVISION TASK:
+Revise the above chapter content to address the feedback while maintaining the chapter's core message and structure. Focus on:
+1. Addressing the priority areas identified in the feedback
+2. Improving overall quality and coherence
+3. Ensuring consistency with the book's style and tone
+4. Maintaining or improving the target word count
+5. Preserving factual accuracy while enhancing readability
+
+Provide the complete revised chapter content:"""
+        
+        try:
+            response = self.llm.invoke([HumanMessage(content=revision_prompt)])
+            return response.content.strip()
+            
+        except Exception as e:
+            logger.error(f"Failed to generate revised content: {e}")
+            return ""
+
     def cleanup_resources(self) -> bool:
         """
         Clean up resources and connections.
